@@ -33,7 +33,7 @@ Note that the ground truth is only provided at t=0s and prediction is constructe
 The prediction is performed recursively, without requiring additional ground-truth data or perception inputs throughout the entire process.
 
 ## Dependency 
-- Run `pip install -r requirements.txt` to collect all python dependencies.
+Run `pip install -r requirements.txt` to collect all python dependencies.
 
 ## Train DEFT Models
 Example: To train a DEFT model using the BDLO1 dataset with end-effectors that grasp the BDLO's ends, run the following command: python DEFT_train.py --BDLO_type="1" --clamp_type="ends"
