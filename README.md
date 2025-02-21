@@ -37,7 +37,7 @@ The prediction is performed recursively, without requiring additional ground-tru
 ## Dependency 
 - Run `pip install -r requirements.txt` to collect all python dependencies.
 
-## Training DEFORM Models
+## Training DEFT Models
 Example: To train a DEFT model using the BDLO1 dataset with end-effectors that grasp the BDLO's ends, run the following command: python DEFT_train.py --BDLO_type="1" --clamp_type="ends"
 
 ## Dataset
