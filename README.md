@@ -41,7 +41,8 @@ The prediction is performed recursively, without requiring additional ground-tru
 Example: To train a DEFT model using the BDLO1 dataset with end-effectors that grasp the BDLO's ends, run the following command: python DEFT_train.py --BDLO_type="1" --clamp_type="ends"
 
 ## Dataset
-- For each BDLO, we collect dynamic trajectory data in the real-world using the motion capture system at a frequency of 100 Hz. For dataset usage, please refer to DEFT_train.py
+- For each BDLO, dynamic trajectory data is captured in real-world settings using a motion capture system operating at 100 Hz when robots grasp the BDLO’s ends. For details on dataset usage, please refer to DEFT_train.py.
+- For BDLO 1 and BDLO 3, we record dynamic trajectory data when one robot grasps the middle of the BDLO while the other robot grasps one of its ends.
 
 ## Citation (To be updated)
 If you use DEFT in an academic work, please cite using the following BibTex entry:
