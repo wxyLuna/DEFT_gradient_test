@@ -23,5 +23,5 @@ All authors are affiliated with the Robotics department and the department of Me
 
 ## Modeling Results
 <p align="center">
-  <img height="1000" width=1200" src="/modeling_demo.png"/>
+  <img height="697" width=1200" src="/modeling_demo.png"/>
 </p>
