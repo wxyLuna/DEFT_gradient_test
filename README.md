@@ -28,3 +28,27 @@ All authors are affiliated with the Robotics department and the department of Me
 <p align="center">
   <img height="530" width=1200" src="/modeling_demo2.png"/>
 </p>
+
+## Dependency 
+- Run `pip install -r requirements.txt` to collect all python dependencies.
+
+## Training DEFORM Models
+Example: To train a DEFT model using the BDLO1 dataset with end-effectors that grasp the BDLO's ends, run the following command: python DEFT_train.py --BDLO_type="1" --clamp_type="ends"
+
+## Dataset
+- For each BDLO, we collect dynamic trajectory data in the real-world using the motion capture system at a frequency of 100 Hz. For dataset usage, please refer to DEFT_train.py
+
+## Citation (To be updated)
+If you use DEFT in an academic work, please cite using the following BibTex entry:
+```
+@misc{chen2024differentiable,
+      title={Differentiable Discrete Elastic Rods for Real-Time Modeling of Deformable Linear Objects}, 
+      author={Yizhou Chen and Yiting Zhang and Zachary Brei and Tiancheng Zhang and Yuzhen Chen and Julie Wu and Ram Vasudevan},
+      year={2024},
+      eprint={2406.05931},
+      archivePrefix={arXiv},
+      primaryClass={id='cs.RO' full_name='Robotics' is_active=True alt_name=None in_archive='cs' is_general=False description='Roughly includes material in ACM Subject Class I.2.9.'}
+}
+```
+
+
