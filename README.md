@@ -22,3 +22,6 @@ To address these challenges, this paper presents Differentiable discrete branche
 All authors are affiliated with the Robotics department and the department of Mechanical Engineering of the University of Michigan, 2505 Hayward Street, Ann Arbor, Michigan, USA.
 
 ## Modeling Results
+<p align="center">
+  <img height="330" width=1200" src="/modeling_demo.png"/>
+</p>
