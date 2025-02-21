@@ -4,7 +4,7 @@ This repository contains the source code for the paper [DEFT: Differentiable Bra
 
 ## Introduction
 <p align="center">
-  <img height="330" src="/demo_image.png"/>
+  <img height="330" width="130" src="/demo_image.png"/>
 </p>
 
 The figures above illustrate how DEFT can be used to autonomously perform a wire insertion task.
