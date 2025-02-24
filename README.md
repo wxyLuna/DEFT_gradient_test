@@ -42,7 +42,7 @@ Example: To train a DEFT model using the BDLO1 dataset with end-effectors that g
 - For each BDLO, dynamic trajectory data is captured in real-world settings using a motion capture system operating at 100 Hz when robots grasp the BDLO’s ends. For details on dataset usage, please refer to DEFT_train.py.
 - For BDLO 1 and BDLO 3, we record dynamic trajectory data when one robot grasps the middle of the BDLO while the other robot grasps one of its ends.
 
-## Citation (To be updated)
+## Citation
 If you use DEFT in an academic work, please cite using the following BibTex entry:
 ```
 @misc{chen2025deftdifferentiablebrancheddiscrete,
