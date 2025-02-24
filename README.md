@@ -1,6 +1,6 @@
 # DEFT: Differentiable Branched Discrete Elastic Rods for Modeling Furcated DLOs in Real-Time
 
-This repository contains the source code for the paper [DEFT: Differentiable Branched Discrete Elastic Rods for Modeling Furcated DLOs in Real-Time](https://arxiv.org/abs/2406.05931). Project page is [here](https://roahmlab.github.io/DEFT/).
+This repository contains the source code for the paper [DEFT: Differentiable Branched Discrete Elastic Rods for Modeling Furcated DLOs in Real-Time](https://arxiv.org/abs/2502.15037). Project page is [here](https://roahmlab.github.io/DEFT/).
 
 ## Introduction
 <p align="center">
@@ -45,13 +45,14 @@ Example: To train a DEFT model using the BDLO1 dataset with end-effectors that g
 ## Citation (To be updated)
 If you use DEFT in an academic work, please cite using the following BibTex entry:
 ```
-@misc{chen2024differentiable,
-      title={Differentiable Discrete Elastic Rods for Real-Time Modeling of Deformable Linear Objects}, 
-      author={Yizhou Chen and Yiting Zhang and Zachary Brei and Tiancheng Zhang and Yuzhen Chen and Julie Wu and Ram Vasudevan},
-      year={2024},
-      eprint={2406.05931},
+@misc{chen2025deftdifferentiablebrancheddiscrete,
+      title={DEFT: Differentiable Branched Discrete Elastic Rods for Modeling Furcated DLOs in Real-Time}, 
+      author={Yizhou Chen and Xiaoyue Wu and Yeheng Zong and Anran Li and Yuzhen Chen and Julie Wu and Bohao Zhang and Ram Vasudevan},
+      year={2025},
+      eprint={2502.15037},
       archivePrefix={arXiv},
-      primaryClass={id='cs.RO' full_name='Robotics' is_active=True alt_name=None in_archive='cs' is_general=False description='Roughly includes material in ACM Subject Class I.2.9.'}
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2502.15037}, 
 }
 ```
 
