@@ -472,12 +472,12 @@ class DEFT_func(nn.Module):
         epsilon = 1e-20
         o_minusGKB[:, 1:] = torch.where(
             scalar_factor != 0,
-            o_minusGKB[:, 1:] / (scalar_factor + epsilon),
+            o_minusGKB[:, 1:].clone() / (scalar_factor + epsilon),
             torch.zeros_like(o_minusGKB[:, 1:]),
         )
         o_plusGKB[:, 1:] = torch.where(
             scalar_factor != 0,
-            o_plusGKB[:, 1:] / (scalar_factor + epsilon),
+            o_plusGKB[:, 1:].clone() / (scalar_factor + epsilon),
             torch.zeros_like(o_plusGKB[:, 1:]),
         )
 
