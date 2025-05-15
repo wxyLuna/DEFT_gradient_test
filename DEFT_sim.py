@@ -283,7 +283,7 @@ class DEFT_sim(nn.Module):
         self.selected_children_index = selected_children_index
         mass_scale1 = children_mass @ torch.linalg.inv(parent_mass + children_mass)
         mass_scale2 = parent_mass @ torch.linalg.inv(parent_mass + children_mass)
-        self.coupling_mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, len(rigid_body_coupling_index), 3, 3)
+        self.coupling_mass_scale = torch.cat((mass_scale1.unsqueeze(dim=1), -mass_scale2.unsqueeze(dim=1)), dim=1)
 
         # Axis angle representation for rod orientation (parent + children). Typically 3 angles per rod.
         self.rod_axis_angle = nn.Parameter(torch.zeros(3*n_branch, 3).to(device))
