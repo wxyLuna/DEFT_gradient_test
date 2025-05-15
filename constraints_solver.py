@@ -469,7 +469,7 @@ class constraints_enforcement(nn.Module):
         delta_angular = pytorch3d.transforms.rotation_conversions.quaternion_to_axis_angle(updated_quaternion).view(-1,
                                                                                                                     1,
                                                                                                                     3)
-        delta_angular = delta_angular.repeat(1, n_children, 1).view(-1, 3)
+        delta_angular = delta_angular.repeat(1, 2, 1).view(-1, 3)
         delta_angular_rod = (momentum_scale @ delta_angular.unsqueeze(dim=-1)).view(-1, 3)
 
         # 3) Convert that scaled axis-angle back to a quaternion, separate parent & child
@@ -480,7 +480,7 @@ class constraints_enforcement(nn.Module):
         # 4) Multiply new rotation quaternions with existing edge quaternions
         orientation = pytorch3d.transforms.quaternion_multiply(
             angular_change_quaternion_rod.clone().view(-1, 4), edge_q.clone()
-        ).view(n_children * batch, n_children, 4)
+        ).view(n_children * batch, 2, 4)
         rod_orientation1, rod_orientation2 = orientation[:, 0], orientation[:, 1]
 
         # 5) Reshape rods
