@@ -70,6 +70,82 @@ def jacobian_f_x1(x1, x2, e1_bar, scale):
     J = scale @ J_inner
     return J
 
+def func_DX_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+    """
+    Inextensibility Constraint Function
+
+    # Inputs:
+    - M_0: [3, 3] mass matrix of vertex i
+    - M_1: [3, 3] mass matrix of vertex i+1
+    - X_0: [3, 1] position of vertex i
+    - X_1: [3, 1] position of vertex i+1
+    - X_0_init: [3, 1] undeformed position of vertex i
+    - X_1_init: [3, 1] undeformed position of vertex i+1
+
+    # Outputs:
+    - DX_0: [3, 1] position change of vertex i
+    - DX_1: [3, 1] position change of vertex i+1
+    """
+
+    M_param = np.linalg.inv(M_0 + M_1)
+    
+    Edge = X_1 - X_0
+    Edge_init = X_1_init - X_0_init
+    Edge_length = np.linalg.norm(Edge)
+    Edge_length_init = np.linalg.norm(Edge_init)
+
+    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
+
+    DX_0 = M_1 @ M_param @ Edge * lambda_param
+    DX_1 = -M_0 @ M_param @ Edge * lambda_param
+
+    return DX_0, DX_1
+
+def grad_DX_X(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+    """
+    Gradient of the inextensibility constraint function with respect to the positions X_0 and X_1.
+
+    # Inputs:
+    idx_1: Index of gradient, DX_{i} (0) or DX_{i+1} (1)
+    idx_2: Index of gradient, X_{i} (0) or X_{i+1} (1)
+    M_0: [3, 3] mass matrix of vertex i
+    M_1: [3, 3] mass matrix of vertex i+1
+    X_0: [3, 1] position of vertex i
+    X_1: [3, 1] position of vertex i+1
+    X_0_init: [3, 1] undeformed position of vertex i
+    X_1_init: [3, 1] undeformed position of vertex i+1
+
+    # Outputs:
+    grad: [3, 3] gradient of the inextensibility constraint function output DX_0 or DX_1 with respect to X_0 or X_1.
+    """
+
+    M_param = np.linalg.inv(M_0 + M_1)
+    Edge = X_1 - X_0
+    Edge_init = X_1_init - X_0_init
+    Edge_length = np.linalg.norm(Edge)
+    Edge_length_init = np.linalg.norm(Edge_init)
+    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
+
+    if idx_1 == 0 and idx_2 == 0:
+        # Gradient of DX_0 with respect to X_0
+        grad = - M_1 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+        grad -= M_1 @ M_param * lambda_param
+    elif idx_1 == 0 and idx_2 == 1:
+        # Gradient of DX_0 with respect to X_1
+        grad = M_1 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+        grad += M_1 @ M_param * lambda_param
+    elif idx_1 == 1 and idx_2 == 0:
+        # Gradient of DX_1 with respect to X_0
+        grad = M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+        grad += M_0 @ M_param * lambda_param
+    elif idx_1 == 1 and idx_2 == 1:
+        # Gradient of DX_1 with respect to X_1
+        grad = - M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+        grad -= M_0 @ M_param * lambda_param
+    else:
+        raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
+
+    return grad
 
 # Example usage:
 if __name__ == '__main__':
