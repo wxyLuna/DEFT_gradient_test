@@ -70,6 +70,7 @@ def jacobian_f_x1(x1, x2, e1_bar, scale):
     J = scale @ J_inner
     return J
 
+
 def func_DX_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
     Inextensibility Constraint Function
@@ -188,6 +189,41 @@ def grad_DX_Xinit(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     return grad
 
+def grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init):
+    """
+       Gradient of the inextensibility constraint function with respect to the positions X_0 and X_1.
+
+
+       # Inputs:
+       idx_1: Index of gradient, DX_0 (0) or DX_1 (1)
+       idx_2: Index of gradient, X_0 (0) or X_1 (1)
+       M_0: [3, 3] mass matrix of vertex i
+       M_1: [3, 3] mass matrix of vertex i+1
+       X_0: [3, 1] position of vertex i
+       X_1: [3, 1] position of vertex i+1
+       X_0_init: [3, 1] undeformed position of vertex i
+       X_1_init: [3, 1] undeformed position of vertex i+1
+
+       # Outputs:
+       grad: [3, 3] gradient of the inextensibility constraint function output DX_0 or DX_1 with respect to X_0 or X_1.
+    """
+    M_param = np.linalg.inv(M_0+M_1)
+    Edge = X_1 - X_0
+    Edge_init = X_1_init - X_0_init
+    Edge_norm = np.linalg.norm(Edge)
+    Edge_init_norm = np.linalg.norm(Edge_init)
+    lambda_param = (Edge_norm**2-Edge_init_norm**2)/ (Edge_norm**2+Edge_init_norm**2)
+    if idx_1 == 0 and idx_2 == 0:
+        grad_M = -M_1*M_param**2*lambda_param*Edge
+    if idx_1 ==0 and idx_2 ==1:
+        grad_M = (np.eye(3)-M_1*M_param)*M_param*lambda_param*Edge
+    if idx_1 == 1 and idx_2 ==0:
+        grad_M = (np.eye(3)-M_0*M_param)*M_param*lambda_param*Edge
+    if idx_1 == 1 and idx_2 == 1:
+        grad_M = -M_0*M_param**2*lambda_param*Edge
+    else:
+        raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
+    return grad_M
 # Example usage:
 if __name__ == '__main__':
     # Define sample values:
