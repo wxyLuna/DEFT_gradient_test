@@ -191,7 +191,7 @@ def grad_DX_Xinit(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
 def grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     """
-       Gradient of the inextensibility constraint function with respect to the positions X_0 and X_1.
+       Gradient of the inextensibility constraint function with respect to the mass matrixes M_0 and M_1.
 
 
        # Inputs:
