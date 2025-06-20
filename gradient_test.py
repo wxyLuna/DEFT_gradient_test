@@ -106,8 +106,8 @@ def grad_DX_X(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     Gradient of the inextensibility constraint function with respect to the positions X_0 and X_1.
 
     # Inputs:
-    idx_1: Index of gradient, DX_{i} (0) or DX_{i+1} (1)
-    idx_2: Index of gradient, X_{i} (0) or X_{i+1} (1)
+    idx_1: Index of gradient, DX_0 (0) or DX_1 (1)
+    idx_2: Index of gradient, X_0 (0) or X_1 (1)
     M_0: [3, 3] mass matrix of vertex i
     M_1: [3, 3] mass matrix of vertex i+1
     X_0: [3, 1] position of vertex i
@@ -142,6 +142,47 @@ def grad_DX_X(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
         # Gradient of DX_1 with respect to X_1
         grad = - M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
         grad -= M_0 @ M_param * lambda_param
+    else:
+        raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
+
+    return grad
+
+def grad_DX_Xinit(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+    """
+    Gradient of the inextensibility constraint function with respect to the undeformed positions X_0_init and X_1_init.
+
+    # Inputs:
+    idx_1: Index of gradient, DX_0 (0) or DX_1 (1)
+    idx_2: Index of gradient, X_0 (0) or X_1 (1)
+    M_0: [3, 3] mass matrix of vertex i
+    M_1: [3, 3] mass matrix of vertex i+1
+    X_0: [3, 1] position of vertex i
+    X_1: [3, 1] position of vertex i+1
+    X_0_init: [3, 1] undeformed position of vertex i
+    X_1_init: [3, 1] undeformed position of vertex i+1
+
+    # Outputs:
+    grad: [3, 3] gradient of the inextensibility constraint function output DX_0 or DX_1 with respect to X_0_init or X_1_init.
+    """
+
+    M_param = np.linalg.inv(M_0 + M_1)
+    Edge = X_1 - X_0
+    Edge_init = X_1_init - X_0_init
+    Edge_length = np.linalg.norm(Edge)
+    Edge_length_init = np.linalg.norm(Edge_init)
+    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
+    if idx_1 == 0 and idx_2 == 0:
+        # Gradient of DX_0 with respect to X_0_init
+        grad = M_1 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    elif idx_1 == 0 and idx_2 == 1:
+        # Gradient of DX_0 with respect to X_1_init
+        grad = -M_1 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    elif idx_1 == 1 and idx_2 == 0:
+        # Gradient of DX_1 with respect to X_0_init
+        grad = -M_0 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    elif idx_1 == 1 and idx_2 == 1:
+        # Gradient of DX_1 with respect to X_1_init
+        grad = M_0 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
     else:
         raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
 
