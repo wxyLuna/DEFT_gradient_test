@@ -1,76 +1,6 @@
 import numpy as np
 
 
-def f_x1(x1, x2, e1_bar, scale):
-    """
-    Compute the function:
-      f(x1) = scale @ ( -2 * e1_bar^2 / (e1_bar^2 + ||x2 - x1||^2) ) * (x2 - x1)
-
-    Parameters:
-      x1      : numpy array of shape (3,), decision variable.
-      x2      : numpy array of shape (3,), constant vector.
-      e1_bar  : scalar, whose square is used.
-      scale   : numpy array of shape (3,3), a constant matrix.
-
-    Returns:
-      f_val   : numpy array of shape (3,), the computed function value.
-    """
-    # Compute A = e1_bar^2 (a constant)
-    A = e1_bar ** 2
-
-    # Compute e1 = x2 - x1 and its squared norm B
-    e1 = x2 - x1
-    B = np.dot(e1, e1)
-
-    # Compute the scalar multiplier Q = -2*A/(A + B)
-    Q = -2 * A / (A + B)
-
-    # Compute f(x1) = scale @ (Q * e1)
-    f_val = scale @ (Q * e1)
-    return f_val
-
-
-def jacobian_f_x1(x1, x2, e1_bar, scale):
-    """
-    Compute the Jacobian (derivative with respect to x1) of the function:
-      f(x1) = scale @ ( -2 * e1_bar^2 / (e1_bar^2 + ||x2-x1||^2) ) * (x2 - x1)
-
-    The Jacobian is given by:
-      J = scale @ [ (2*A/(A+B))*I - (4*A/(A+B)^2)*(x2-x1)(x2-x1)^T ]
-
-    where:
-      A = e1_bar^2 and B = ||x2-x1||^2.
-
-    Parameters:
-      x1      : numpy array of shape (3,), decision variable.
-      x2      : numpy array of shape (3,), constant vector.
-      e1_bar  : scalar, whose square is used.
-      scale   : numpy array of shape (3,3), a constant matrix.
-
-    Returns:
-      J       : numpy array of shape (3,3), the Jacobian matrix of f with respect to x1.
-    """
-    # Compute A = e1_bar^2 and e1 = x2 - x1
-    A = e1_bar ** 2
-    e1 = x2 - x1
-    # Compute B = ||x2 - x1||^2
-    B = np.dot(e1, e1)
-
-    # Create the 3x3 identity matrix
-    I = np.eye(3)
-
-    # Compute the two terms for the inner Jacobian:
-    term1 = (2 * A / (A + B)) * I
-    term2 = (4 * A / (A + B) ** 2) * np.outer(e1, e1)
-
-    # The Jacobian of the inner function Q*e1 with respect to x1:
-    J_inner = term1 - term2
-
-    # Full Jacobian is left-multiplied by the scale matrix.
-    J = scale @ J_inner
-    return J
-
-
 def func_DX_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
     Inextensibility Constraint Function
@@ -102,13 +32,11 @@ def func_DX_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     return DX_0, DX_1
 
-def grad_DX_X(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def grad_DX_X(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
     Gradient of the inextensibility constraint function with respect to the positions X_0 and X_1.
 
     # Inputs:
-    idx_1: Index of gradient, DX_0 (0) or DX_1 (1)
-    idx_2: Index of gradient, X_0 (0) or X_1 (1)
     M_0: [3, 3] mass matrix of vertex i
     M_1: [3, 3] mass matrix of vertex i+1
     X_0: [3, 1] position of vertex i
@@ -117,7 +45,7 @@ def grad_DX_X(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     X_1_init: [3, 1] undeformed position of vertex i+1
 
     # Outputs:
-    grad: [3, 3] gradient of the inextensibility constraint function output DX_0 or DX_1 with respect to X_0 or X_1.
+    4 grads: [3, 3] gradient of the inextensibility constraint function output DX_0, DX_1 with respect to X_0, X_1.
     """
 
     M_param = np.linalg.inv(M_0 + M_1)
@@ -127,34 +55,26 @@ def grad_DX_X(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     Edge_length_init = np.linalg.norm(Edge_init)
     lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
 
-    if idx_1 == 0 and idx_2 == 0:
-        # Gradient of DX_0 with respect to X_0
-        grad = - M_1 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
-        grad -= M_1 @ M_param * lambda_param
-    elif idx_1 == 0 and idx_2 == 1:
-        # Gradient of DX_0 with respect to X_1
-        grad = M_1 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
-        grad += M_1 @ M_param * lambda_param
-    elif idx_1 == 1 and idx_2 == 0:
-        # Gradient of DX_1 with respect to X_0
-        grad = M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
-        grad += M_0 @ M_param * lambda_param
-    elif idx_1 == 1 and idx_2 == 1:
-        # Gradient of DX_1 with respect to X_1
-        grad = - M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
-        grad -= M_0 @ M_param * lambda_param
-    else:
-        raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
+	# Gradient of DX_0 with respect to X_0
+    grad_00 = - M_1 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    grad_00 -= M_1 @ M_param * lambda_param
+	# Gradient of DX_0 with respect to X_1
+    grad_01 = M_1 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    grad_01 += M_1 @ M_param * lambda_param
+	# Gradient of DX_1 with respect to X_0
+    grad_10 = M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    grad_10 += M_0 @ M_param * lambda_param
+	# Gradient of DX_1 with respect to X_1
+    grad_11 = - M_0 @ M_param @ Edge @ Edge.T * (4*Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    grad_11 -= M_0 @ M_param * lambda_param
 
-    return grad
+    return grad_00, grad_01, grad_10, grad_11
 
-def grad_DX_Xinit(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def grad_DX_Xinit(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
     Gradient of the inextensibility constraint function with respect to the undeformed positions X_0_init and X_1_init.
 
     # Inputs:
-    idx_1: Index of gradient, DX_0 (0) or DX_1 (1)
-    idx_2: Index of gradient, X_0 (0) or X_1 (1)
     M_0: [3, 3] mass matrix of vertex i
     M_1: [3, 3] mass matrix of vertex i+1
     X_0: [3, 1] position of vertex i
@@ -163,7 +83,7 @@ def grad_DX_Xinit(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     X_1_init: [3, 1] undeformed position of vertex i+1
 
     # Outputs:
-    grad: [3, 3] gradient of the inextensibility constraint function output DX_0 or DX_1 with respect to X_0_init or X_1_init.
+    4 grads: [3, 3] gradient of the inextensibility constraint function output DX_0, DX_1 with respect to X_0_init, X_1_init.
     """
 
     M_param = np.linalg.inv(M_0 + M_1)
@@ -172,31 +92,26 @@ def grad_DX_Xinit(idx_1, idx_2, M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     Edge_length = np.linalg.norm(Edge)
     Edge_length_init = np.linalg.norm(Edge_init)
     lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
-    if idx_1 == 0 and idx_2 == 0:
-        # Gradient of DX_0 with respect to X_0_init
-        grad = M_1 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
-    elif idx_1 == 0 and idx_2 == 1:
-        # Gradient of DX_0 with respect to X_1_init
-        grad = -M_1 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
-    elif idx_1 == 1 and idx_2 == 0:
-        # Gradient of DX_1 with respect to X_0_init
-        grad = -M_0 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
-    elif idx_1 == 1 and idx_2 == 1:
-        # Gradient of DX_1 with respect to X_1_init
-        grad = M_0 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
-    else:
-        raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
+    
+	# Gradient of DX_0 with respect to X_0_init
+    grad_00 = M_1 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
+	# Gradient of DX_0 with respect to X_1_init
+    grad_01 = -M_1 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
+	# Gradient of DX_1 with respect to X_0_init
+    grad_10 = -M_0 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
+	# Gradient of DX_1 with respect to X_1_init
+    grad_11 = M_0 @ M_param @ Edge @ Edge_init.T * (4*Edge_length**2 / (Edge_length**2 + Edge_length_init**2)**2)
 
-    return grad
+    return grad_00, grad_01, grad_10, grad_11
 
-def grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init):
+def grad_DX_M(M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     """
        Gradient of the inextensibility constraint function with respect to the mass matrixes M_0 and M_1.
 
 
        # Inputs:
        idx_1: Index of gradient, DX_0 (0) or DX_1 (1)
-       idx_2: Index of gradient, X_0 (0) or X_1 (1)
+       idx_2: Index of gradient, M_0 (0) or M_1 (1)
        M_0: [3, 3] mass matrix of vertex i
        M_1: [3, 3] mass matrix of vertex i+1
        X_0: [3, 1] position of vertex i
@@ -205,7 +120,7 @@ def grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init):
        X_1_init: [3, 1] undeformed position of vertex i+1
 
        # Outputs:
-       grad: [3, 3] gradient of the inextensibility constraint function output DX_0 or DX_1 with respect to X_0 or X_1.
+       4 grads: [3, 1] gradient of the inextensibility constraint function output DX_0, DX_1 with respect to M_0, M_1.
     """
     M_param = np.linalg.inv(M_0+M_1)
     Edge = X_1 - X_0
@@ -213,37 +128,64 @@ def grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     Edge_norm = np.linalg.norm(Edge)
     Edge_init_norm = np.linalg.norm(Edge_init)
     lambda_param = (Edge_norm**2-Edge_init_norm**2)/ (Edge_norm**2+Edge_init_norm**2)
-    if idx_1 == 0 and idx_2 == 0:
-        grad_M = - M_1 @ M_param @ M_param @ Edge * lambda_param
-    elif idx_1 ==0 and idx_2 ==1:
-        grad_M = (np.eye(3) - M_1 @ M_param) @ M_param @ Edge* lambda_param
-    elif idx_1 == 1 and idx_2 ==0:
-        grad_M = (np.eye(3)-M_0@M_param)@M_param@Edge*lambda_param
-    elif idx_1 == 1 and idx_2 == 1:
-        grad_M = -M_0@M_param@M_param@Edge*lambda_param
-    else:
-        raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
-    return grad_M
+	
+    grad_M_00 = - M_1 @ M_param @ M_param @ Edge * lambda_param
+    grad_M_01 = (np.eye(3) - M_1 @ M_param) @ M_param @ Edge* lambda_param
+    grad_M_10 = (np.eye(3)-M_0@M_param)@M_param@Edge*lambda_param
+    grad_M_11 = -M_0@M_param@M_param@Edge*lambda_param
+
+    return grad_M_00, grad_M_01, grad_M_10, grad_M_11
 # Example usage:
 
 if __name__ == '__main__':
     # Define sample values:
-    x1 = np.array([0.0020,  0.6336, -0.0126])
-    x2 = np.array([-0.0046,  0.6808,  0.0102])
+    x0 = np.array([0.0020, 0.6336, -0.0126])
+    x1 = np.array([-0.0046, 0.6808, 0.0102])
+    
+    diff_x0 = np.array([0.001, 0.0, 0.0])
+    diff_x1 = np.array([-0.0, 0.0, 0.0])
+
+    x0_init = np.array([0.0, 0.0, 0.0])
+    x1_init = np.array([0.0447, 0.0, 0.0])
+    
+    diff_x0_init = np.array([0.0, 0.0, 0.0])
+    diff_x1_init = np.array([0.0, 0.0, 0.0])
 
     # Let e1_bar be a scalar constant.
     e1_bar = 0.0447  # for example
 
     # Define scale as a 3x3 matrix, for instance:
-    scale = np.array([[0.7349, 0., 0.],
-                      [0.0, 0.7349, 0.],
-                      [0.0, 0.0, 0.7349]])
+    M0 = np.array([[0.7349, 0.0, 0.0],
+                   [0.0, 0.7349, 0.0],
+                   [0.0, 0.0, 0.7349]])
+    
+    M1 = np.array([[0.2651, 0.0, 0.0],
+                   [0.0, 0.2651, 0.0],
+                   [0.0, 0.0, 0.2651]])
+    
+    diff_M0 = np.array([[0.0, 0.0, 0.0],
+						[0.0, 0.0, 0.0],
+						[0.0, 0.0, 0.0]])
+    diff_M1 = np.array([[0.0, 0.0, 0.0],
+						[0.0, 0.0, 0.0],
+						[0.0, 0.0, 0.0]])
 
     # Compute the function value and Jacobian.
-    f_val = f_x1(x1, x2, e1_bar, scale)
-    J = np.eye(3) - jacobian_f_x1(x1, x2, e1_bar, scale)
+    DX_0_m, DX_1_m = func_DX_ICitr(M0-diff_M0, M1-diff_M1, x0-diff_x0, x1-diff_x1, x0_init-diff_x0_init, x1_init-diff_x1_init)
+    DX_0_p, DX_1_p = func_DX_ICitr(M0+diff_M0, M1+diff_M1, x0+diff_x0, x1+diff_x1, x0_init+diff_x0_init, x1_init+diff_x1_init)
+    J_DX0_X0, J_DX0_X1, J_DX1_X0, J_DX1_X1 = grad_DX_X(M0, M1, x0, x1, x0_init, x1_init)
+    J_DX0_X0_init, J_DX0_X1_init, J_DX1_X0_init, J_DX1_X1_init = grad_DX_Xinit(M0, M1, x0, x1, x0_init, x1_init)
+    J_DX0_M0, J_DX0_M1, J_DX1_M0, J_DX1_M1 = grad_DX_M(M0, M1, x0, x1, x0_init, x1_init)
+    
+    num_diff_DX_0 = DX_0_p - DX_0_m
+    num_diff_DX_1 = DX_1_p - DX_1_m
+    
+    grad_diff_DX_0 = J_DX0_X0 @ diff_x0 + J_DX0_X1 @ diff_x1 + J_DX0_X0_init @ diff_x0_init + J_DX0_X1_init @ diff_x1_init + J_DX0_M0 @ diff_M0 + J_DX0_M1 @ diff_M1
+    grad_diff_DX_1 = J_DX1_X0 @ diff_x0 + J_DX1_X1 @ diff_x1 + J_DX1_X0_init @ diff_x0_init + J_DX1_X1_init @ diff_x1_init + J_DX1_M0 @ diff_M0 + J_DX1_M1 @ diff_M1
 
-    print("Function f(x1):")
-    print(f_val)
-    print("\nJacobian df/dx1:")
-    print(J)
+    print("numerical difference")
+    print("DX_0:", num_diff_DX_0)
+    print("DX_1:", num_diff_DX_1)
+    print("gradient difference")
+    print("DX_0:", grad_diff_DX_0)
+    print("DX_1:", grad_diff_DX_1)
