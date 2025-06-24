@@ -3,7 +3,7 @@ import numpy as np
 
 def func_DX_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
-    Inextensibility Constraint Function
+    Inextensibility Constraint Iterative Function
 
     # Inputs:
     - M_0: [3, 3] mass matrix of vertex i
@@ -32,9 +32,9 @@ def func_DX_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     return DX_0, DX_1
 
-def grad_DX_X(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def grad_DX_X_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
-    Gradient of the inextensibility constraint function with respect to the positions X_0 and X_1.
+    Gradient of the inextensibility constraint iterative function with respect to the positions X_0 and X_1.
 
     # Inputs:
     M_0: [3, 3] mass matrix of vertex i
@@ -45,7 +45,7 @@ def grad_DX_X(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     X_1_init: [3, 1] undeformed position of vertex i+1
 
     # Outputs:
-    4 grads: [3, 3] gradient of the inextensibility constraint function output DX_0, DX_1 with respect to X_0, X_1.
+    4 grads: [3, 3] gradient of the inextensibility constraint iterative function output DX_0, DX_1 with respect to X_0, X_1.
     """
 
     M_param = np.linalg.inv(M_0 + M_1)
@@ -72,9 +72,9 @@ def grad_DX_X(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     return grad_00, grad_01, grad_10, grad_11
 
-def grad_DX_Xinit(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def grad_DX_Xinit_ICitr(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
-    Gradient of the inextensibility constraint function with respect to the undeformed positions X_0_init and X_1_init.
+    Gradient of the inextensibility constraint iterative function with respect to the undeformed positions X_0_init and X_1_init.
 
     # Inputs:
     M_0: [3, 3] mass matrix of vertex i
@@ -85,7 +85,7 @@ def grad_DX_Xinit(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     X_1_init: [3, 1] undeformed position of vertex i+1
 
     # Outputs:
-    4 grads: [3, 3] gradient of the inextensibility constraint function output DX_0, DX_1 with respect to X_0_init, X_1_init.
+    4 grads: [3, 3] gradient of the inextensibility constraint iterative function output DX_0, DX_1 with respect to X_0_init, X_1_init.
     """
 
     M_param = np.linalg.inv(M_0 + M_1)
@@ -108,9 +108,9 @@ def grad_DX_Xinit(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     return grad_00, grad_01, grad_10, grad_11
 
-def grad_DX_M(M_0,M_1,X_0,X_1,X_0_init,X_1_init):
+def grad_DX_M_ICitr(M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     """
-       Gradient of the inextensibility constraint function with respect to the mass matrixes M_0 and M_1.
+       Gradient of the inextensibility constraint iterative function with respect to the mass matrixes M_0 and M_1.
 
 
        # Inputs:
@@ -124,7 +124,7 @@ def grad_DX_M(M_0,M_1,X_0,X_1,X_0_init,X_1_init):
        X_1_init: [3, 1] undeformed position of vertex i+1
 
        # Outputs:
-       4 grads: [3, 1] gradient of the inextensibility constraint function output DX_0, DX_1 with respect to M_0, M_1.
+       4 grads: [3, 1] gradient of the inextensibility constraint iterative function output DX_0, DX_1 with respect to M_0, M_1.
     """
     M_param = np.linalg.inv(M_0+M_1)
     Edge = X_1 - X_0
@@ -139,6 +139,7 @@ def grad_DX_M(M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     grad_M_11 = M_0@M_param@M_param@Edge*lambda_param
 
     return grad_M_00, grad_M_01, grad_M_10, grad_M_11
+
 # Example usage:
 
 if __name__ == '__main__':
@@ -178,9 +179,9 @@ if __name__ == '__main__':
     # Compute the function value and Jacobian.
     DX_0_m, DX_1_m = func_DX_ICitr(M0-diff_M0, M1-diff_M1, x0-diff_x0, x1-diff_x1, x0_init-diff_x0_init, x1_init-diff_x1_init)
     DX_0_p, DX_1_p = func_DX_ICitr(M0+diff_M0, M1+diff_M1, x0+diff_x0, x1+diff_x1, x0_init+diff_x0_init, x1_init+diff_x1_init)
-    J_DX0_X0, J_DX0_X1, J_DX1_X0, J_DX1_X1 = grad_DX_X(M0, M1, x0, x1, x0_init, x1_init)
-    J_DX0_X0_init, J_DX0_X1_init, J_DX1_X0_init, J_DX1_X1_init = grad_DX_Xinit(M0, M1, x0, x1, x0_init, x1_init)
-    J_DX0_M0, J_DX0_M1, J_DX1_M0, J_DX1_M1 = grad_DX_M(M0, M1, x0, x1, x0_init, x1_init)
+    J_DX0_X0, J_DX0_X1, J_DX1_X0, J_DX1_X1 = grad_DX_X_ICitr(M0, M1, x0, x1, x0_init, x1_init)
+    J_DX0_X0_init, J_DX0_X1_init, J_DX1_X0_init, J_DX1_X1_init = grad_DX_Xinit_ICitr(M0, M1, x0, x1, x0_init, x1_init)
+    J_DX0_M0, J_DX0_M1, J_DX1_M0, J_DX1_M1 = grad_DX_M_ICitr(M0, M1, x0, x1, x0_init, x1_init)
     
     num_diff_DX_0 = (DX_0_p - DX_0_m)/2
     num_diff_DX_1 = (DX_1_p - DX_1_m)/2
