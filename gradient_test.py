@@ -214,17 +214,18 @@ def grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     Edge_init_norm = np.linalg.norm(Edge_init)
     lambda_param = (Edge_norm**2-Edge_init_norm**2)/ (Edge_norm**2+Edge_init_norm**2)
     if idx_1 == 0 and idx_2 == 0:
-        grad_M = -M_1*M_param**2*lambda_param*Edge
-    if idx_1 ==0 and idx_2 ==1:
-        grad_M = (np.eye(3)-M_1*M_param)*M_param*lambda_param*Edge
-    if idx_1 == 1 and idx_2 ==0:
-        grad_M = (np.eye(3)-M_0*M_param)*M_param*lambda_param*Edge
-    if idx_1 == 1 and idx_2 == 1:
-        grad_M = -M_0*M_param**2*lambda_param*Edge
+        grad_M = - M_1 @ M_param @ M_param @ Edge * lambda_param
+    elif idx_1 ==0 and idx_2 ==1:
+        grad_M = (np.eye(3) - M_1 @ M_param) @ M_param @ Edge* lambda_param
+    elif idx_1 == 1 and idx_2 ==0:
+        grad_M = (np.eye(3)-M_0@M_param)@M_param@Edge*lambda_param
+    elif idx_1 == 1 and idx_2 == 1:
+        grad_M = -M_0@M_param@M_param@Edge*lambda_param
     else:
         raise ValueError("Invalid indices for gradient computation. Use (0,0), (0,1), (1,0), or (1,1).")
     return grad_M
 # Example usage:
+
 if __name__ == '__main__':
     # Define sample values:
     x1 = np.array([0.0020,  0.6336, -0.0126])
