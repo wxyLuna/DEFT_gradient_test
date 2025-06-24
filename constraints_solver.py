@@ -9,6 +9,7 @@ from numpy.core.defchararray import lower
 
 torch.set_default_dtype(torch.float64)
 import torch.nn as nn
+import gradient_test
 
 torch.set_default_dtype(torch.float64)
 
@@ -234,7 +235,7 @@ class constraints_enforcement(nn.Module):
         return rotation_matrix
 
     def Inextensibility_Constraint_Enforcement(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                               scale, mass_scale, zero_mask_num):
+                                               scale, mass_scale, zero_mask_num,grad_print = False):
         """
         Enforces inextensibility constraints for a single DLO by adjusting vertex positions
         so that the edge lengths stay near their nominal values.
@@ -262,6 +263,24 @@ class constraints_enforcement(nn.Module):
 
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)
+            """derivative test"""
+
+            idx_1 = 0
+            idx_2 = 0
+            new_vertices = current_vertices.clone()
+            if i == 0 and grad_print:
+
+                M_0 = mass_scale[0, i]
+                M_1 = mass_scale[0, i]
+                X_0 = new_vertices[:, i]
+                X_1 = new_vertices[:, i + 1]
+                X_0_init =
+                X_1_init =
+
+                a = gradient_test.grad_DX_M(idx_1,idx_2,M_0,M_1,X_0,X_1,X_0_init,X_1_init)
+
+                print(a.size())
+                print("calculated analytical gradient", a)
             # l ~ measure of inextensibility mismatch
             l = torch.zeros_like(nominal_length_square[:, i])
             mask = zero_mask_num[:, i].bool()
