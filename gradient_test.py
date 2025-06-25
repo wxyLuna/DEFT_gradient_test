@@ -141,6 +141,68 @@ def grad_DX_M_ICitr(M_0,M_1,X_0,X_1,X_0_init,X_1_init):
     return grad_M_00, grad_M_01, grad_M_10, grad_M_11
 
 # Example usage:
+import pandas as pd
+import numpy as np
+
+def compute_summary(name, diff_x0, diff_x1, diff_x0_init, diff_x1_init, diff_M0, diff_M1, tol=1e-6):
+    # Re-evaluate both numerical and analytical differences
+    DX_0_m, DX_1_m = func_DX_ICitr(M0-diff_M0, M1-diff_M1, x0-diff_x0, x1-diff_x1, x0_init-diff_x0_init, x1_init-diff_x1_init)
+    DX_0_p, DX_1_p = func_DX_ICitr(M0+diff_M0, M1+diff_M1, x0+diff_x0, x1+diff_x1, x0_init+diff_x0_init, x1_init+diff_x1_init)
+    num_diff_DX_0 = (DX_0_p - DX_0_m)/2
+    num_diff_DX_1 = (DX_1_p - DX_1_m)/2
+
+    grad_diff_DX_0 = J_DX0_X0 @ diff_x0 + J_DX0_X1 @ diff_x1 + J_DX0_X0_init @ diff_x0_init + J_DX0_X1_init @ diff_x1_init + diff_M0 @ J_DX0_M0  + diff_M1@J_DX0_M1
+    grad_diff_DX_1 = J_DX1_X0 @ diff_x0 + J_DX1_X1 @ diff_x1 + J_DX1_X0_init @ diff_x0_init + J_DX1_X1_init @ diff_x1_init + diff_M0 @ J_DX1_M0  + diff_M1 @ J_DX1_M1
+
+    # Differences
+    err_DX0 = np.abs(num_diff_DX_0 - grad_diff_DX_0)
+    err_DX1 = np.abs(num_diff_DX_1 - grad_diff_DX_1)
+
+    return {
+        "Perturbation": name,
+        "Max |ΔDX0|": np.max(err_DX0),
+        "Mean |ΔDX0|": np.mean(err_DX0),
+        "Max |ΔDX1|": np.max(err_DX1),
+        "Mean |ΔDX1|": np.mean(err_DX1),
+        "Pass?": np.max(err_DX0) < tol and np.max(err_DX1) < tol
+    }
+
+def compute_summary(name, diff_x0, diff_x1, diff_x0_init, diff_x1_init, diff_M0, diff_M1, tol=1e-3):
+    # Re-evaluate both numerical and analytical differences
+    DX_0_m, DX_1_m = func_DX_ICitr(M0-diff_M0, M1-diff_M1, x0-diff_x0, x1-diff_x1, x0_init-diff_x0_init, x1_init-diff_x1_init)
+    DX_0_p, DX_1_p = func_DX_ICitr(M0+diff_M0, M1+diff_M1, x0+diff_x0, x1+diff_x1, x0_init+diff_x0_init, x1_init+diff_x1_init)
+    num_diff_DX_0 = (DX_0_p - DX_0_m)/2
+    num_diff_DX_1 = (DX_1_p - DX_1_m)/2
+
+    grad_diff_DX_0 = J_DX0_X0 @ diff_x0 + J_DX0_X1 @ diff_x1 + J_DX0_X0_init @ diff_x0_init + J_DX0_X1_init @ diff_x1_init + diff_M0 @ J_DX0_M0  + diff_M1@J_DX0_M1
+    grad_diff_DX_1 = J_DX1_X0 @ diff_x0 + J_DX1_X1 @ diff_x1 + J_DX1_X0_init @ diff_x0_init + J_DX1_X1_init @ diff_x1_init + diff_M0 @ J_DX1_M0  + diff_M1 @ J_DX1_M1
+
+    # Differences
+    err_DX0 = (grad_diff_DX_0-num_diff_DX_0)/num_diff_DX_0
+    err_DX1 = (grad_diff_DX_1-num_diff_DX_1)/num_diff_DX_1
+    relative_error = np.vstack([err_DX0, err_DX1])
+    pass_check = np.all(np.abs(relative_error) < tol)
+    formatted = np.vectorize(lambda x: f"{x:.3e}")(relative_error)
+
+    return {
+        "Perturbation": name,
+        "Relative Difference": formatted,
+        "Pass? (tolerance = 1e^{-8})": pass_check
+    }
+
+    # return {
+    #     "Perturbation": name,
+    #     "Numerical Gradient \delta x _{i}":num_diff_DX_0,
+    #     "Numerical Gradient \delta x _{i+1}": num_diff_DX_1,
+    #     "Analytical Gradient \delta x _{i}": grad_diff_DX_0,
+    #     "Analytical Gradient \delta x _{i+1}": grad_diff_DX_1,
+    #     "Max \|\delta x _{i}\|difference": np.max(err_DX0),
+    #     "Mean \|\delta x _{i}\|difference": np.mean(err_DX0),
+    #     "Max \|\delta x _{i+1}\|difference": np.max(err_DX1),
+    #     "Mean \|\delta x _{i+1}\|difference": np.mean(err_DX1),
+    #     "Pass?(tolerance = 1e^{-8}": np.max(err_DX0) < tol and np.max(err_DX1) < tol
+    # }
+
 
 if __name__ == '__main__':
     # Define sample values:
@@ -198,3 +260,69 @@ if __name__ == '__main__':
     print("gradient difference")
     print("DX_0:", grad_diff_DX_0)
     print("DX_1:", grad_diff_DX_1)
+
+    results = []
+
+    results.append(compute_summary(
+        name="X_i",
+        diff_x0=np.array([0.00001, 0, 0]),
+        diff_x1=np.zeros(3),
+        diff_x0_init=np.zeros(3),
+        diff_x1_init=np.zeros(3),
+        diff_M0=np.zeros((3, 3)),
+        diff_M1=np.zeros((3, 3))
+    ))
+    results.append(compute_summary(
+        name="X_i+1",
+        diff_x0=np.zeros(3),
+        diff_x1=np.array([0.00001, -0.000053, 0.000002]),
+        diff_x0_init=np.zeros(3),
+        diff_x1_init=np.zeros(3),
+        diff_M0=np.zeros((3, 3)),
+        diff_M1=np.zeros((3, 3))
+    ))
+
+    results.append(compute_summary(
+        name="Mi",
+        diff_x0=np.zeros(3),
+        diff_x1=np.zeros(3),
+        diff_x0_init=np.zeros(3),
+        diff_x1_init=np.zeros(3),
+        diff_M0=np.array([[0.00001, 0.0, 0.00003], [0.00002, 0, 0.0], [0.00001, 0.0, 0]]),
+        diff_M1=np.zeros(3)
+    ))
+
+    results.append(compute_summary(
+        name="M_i+1",
+        diff_x0=np.zeros(3),
+        diff_x1=np.zeros(3),
+        diff_x0_init=np.zeros(3),
+        diff_x1_init=np.zeros(3),
+        diff_M0=np.zeros(3),
+        diff_M1=0.00001*np.eye(3)
+    ))
+
+    results.append(compute_summary(
+        name="Xi_init",
+        diff_x0=np.zeros(3),
+        diff_x1=np.zeros(3),
+        diff_x0_init=np.array([0.00004, 0.00002, -0.000009]),
+        diff_x1_init=np.zeros(3),
+        diff_M0=np.zeros((3, 3)),
+        diff_M1=np.zeros((3, 3))
+    ))
+    results.append(compute_summary(
+        name="Xi+1_init",
+        diff_x0=np.zeros(3),
+        diff_x1=np.zeros(3),
+        diff_x0_init=np.zeros(3),
+        diff_x1_init=np.array([-0.00002, -0.000015, 0.000003]),
+        diff_M0=np.zeros((3, 3)),
+        diff_M1=np.zeros((3, 3))
+    ))
+    df = pd.DataFrame(results)
+    df.to_csv("gradient_check_results_simplified.csv", index=False)
+    print(df.to_latex(index=False, float_format="%.2e"))
+
+
+
