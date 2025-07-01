@@ -642,8 +642,22 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 previous_b_DLOs_vertices_traj, b_DLOs_vertices_traj, target_b_DLOs_vertices_traj, m_u0_traj = data
 
                 # Forward pass through the DEFT model for train_time_horizon timesteps
-                traj_loss, total_loss = DEFT_sim_train.iterative_sim(
-                    train_time_horizon,
+                # traj_loss, total_loss = DEFT_sim_train.iterative_sim(
+                #     train_time_horizon,
+                #     b_DLOs_vertices_traj,
+                #     previous_b_DLOs_vertices_traj,
+                #     target_b_DLOs_vertices_traj,
+                #     loss_func,
+                #     dt,
+                #     parent_theta_clamp,
+                #     child1_theta_clamp,
+                #     child2_theta_clamp,
+                #     inference_1_batch,
+                #     vis_type=vis_type,
+                #     vis=vis
+                # )
+
+                DEFT_sim_train.reset(
                     b_DLOs_vertices_traj,
                     previous_b_DLOs_vertices_traj,
                     target_b_DLOs_vertices_traj,
@@ -657,12 +671,24 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                     vis=vis
                 )
 
+                frame_num_per_step = 1
+                total_step_num = 50
+                sum_traj_loss = 0.0
+                sum_total_loss = 0.0
+                for step in range(total_step_num):
+                    traj_loss, total_loss = DEFT_sim_train.step(
+                        frame_num_per_step,
+                        step
+                    )
+                    sum_traj_loss += traj_loss
+                    sum_total_loss += total_loss
+
                 # Record and print training loss
-                training_losses.append(traj_loss.cpu().detach().numpy() / train_time_horizon)
+                training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
                 training_epochs.append(training_iteration)
 
                 # Backprop through the total loss
-                total_loss.backward(retain_graph=True)
+                sum_total_loss.backward(retain_graph=True)
                 optimizer.step()
                 optimizer.zero_grad()
 
