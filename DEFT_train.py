@@ -19,6 +19,7 @@ from tqdm import tqdm
 import os
 import argparse
 import matplotlib.pyplot as plt
+import time
 
 
 def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, inference_vis, inference_1_batch,
@@ -657,6 +658,7 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 #     vis=vis
                 # )
 
+                t0 = time.time()
                 DEFT_sim_train.reset(
                     b_DLOs_vertices_traj,
                     previous_b_DLOs_vertices_traj,
@@ -670,6 +672,8 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                     vis_type=vis_type,
                     vis=vis
                 )
+                t1 = time.time()
+                print("reset time: ", t1-t0)
 
                 frame_num_per_step = 1
                 total_step_num = 50
@@ -683,6 +687,9 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                     sum_traj_loss += traj_loss
                     sum_total_loss += total_loss
 
+                t2 = time.time()
+                print("time for ", total_step_num, "steps: ", t2 - t1)
+
                 # Record and print training loss
                 training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
                 training_epochs.append(training_iteration)
@@ -691,6 +698,8 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 sum_total_loss.backward(retain_graph=True)
                 optimizer.step()
                 optimizer.zero_grad()
+                t3 = time.time()
+                print("backward time: ", t3 - t2)
 
                 # Save training losses to pickle
                 save_pickle(training_losses,
