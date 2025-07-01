@@ -1,0 +1,3 @@
+__pycache__/
+residual_learning_nn/__pycache__/
+saved_model/*.pth
