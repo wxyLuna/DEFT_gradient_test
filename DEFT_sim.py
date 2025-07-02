@@ -1442,6 +1442,9 @@ class DEFT_sim(nn.Module):
         num_frames,
         idx_start_frame,
     ):
+        # self._b_DLOs_vertices = self._b_DLOs_vertices.detach()
+        # self._b_DLOs_velocity = self._b_DLOs_velocity.detach()
+        # self._b_DLOs_vertices_old = self._b_DLOs_vertices_old.detach()
         for ith in range(num_frames):
             # 1) Retrieve current/previous BDLO states
             prev_b_DLOs_vertices = self._b_DLOs_vertices_old.clone()

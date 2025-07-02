@@ -20,6 +20,7 @@ import os
 import argparse
 import matplotlib.pyplot as plt
 import time
+from torch.profiler import profile, record_function, ProfilerActivity
 
 
 def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, inference_vis, inference_1_batch,
@@ -643,6 +644,7 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 previous_b_DLOs_vertices_traj, b_DLOs_vertices_traj, target_b_DLOs_vertices_traj, m_u0_traj = data
 
                 # Forward pass through the DEFT model for train_time_horizon timesteps
+                # t2 = time.time()
                 # traj_loss, total_loss = DEFT_sim_train.iterative_sim(
                 #     train_time_horizon,
                 #     b_DLOs_vertices_traj,
@@ -658,48 +660,74 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 #     vis=vis
                 # )
 
-                t0 = time.time()
-                DEFT_sim_train.reset(
-                    b_DLOs_vertices_traj,
-                    previous_b_DLOs_vertices_traj,
-                    target_b_DLOs_vertices_traj,
-                    loss_func,
-                    dt,
-                    parent_theta_clamp,
-                    child1_theta_clamp,
-                    child2_theta_clamp,
-                    inference_1_batch,
-                    vis_type=vis_type,
-                    vis=vis
-                )
-                t1 = time.time()
-                print("reset time: ", t1-t0)
+                with torch.profiler.profile(
+                        activities=[
+                            torch.profiler.ProfilerActivity.CPU
 
-                frame_num_per_step = 1
-                total_step_num = 50
-                sum_traj_loss = 0.0
-                sum_total_loss = 0.0
-                for step in range(total_step_num):
-                    traj_loss, total_loss = DEFT_sim_train.step(
-                        frame_num_per_step,
-                        step
+                        ],
+                        record_shapes=False,  # Record input shapes for operators
+                        profile_memory=False,  # Track memory usage
+                        with_stack=True,  # Record call stack for detailed insights
+                ) as prof:
+
+
+
+
+                    t0 = time.time()
+
+                    DEFT_sim_train.reset(
+                        b_DLOs_vertices_traj,
+                        previous_b_DLOs_vertices_traj,
+                        target_b_DLOs_vertices_traj,
+                        loss_func,
+                        dt,
+                        parent_theta_clamp,
+                        child1_theta_clamp,
+                        child2_theta_clamp,
+                        inference_1_batch,
+                        vis_type=vis_type,
+                        vis=vis
                     )
-                    sum_traj_loss += traj_loss
-                    sum_total_loss += total_loss
+                    t1 = time.time()
+                    print("reset time: ", t1-t0)
 
-                t2 = time.time()
-                print("time for ", total_step_num, "steps: ", t2 - t1)
+                    frame_num_per_step = 1
+                    total_step_num = 1
+                    sum_traj_loss = 0.0
+                    sum_total_loss = 0.0
 
-                # Record and print training loss
-                training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
-                training_epochs.append(training_iteration)
+                    for step in range(total_step_num):
+                        with torch.no_grad():
+                            traj_loss, total_loss = DEFT_sim_train.step(
+                                frame_num_per_step,
+                                step
+                            )
 
-                # Backprop through the total loss
-                sum_total_loss.backward(retain_graph=True)
-                optimizer.step()
-                optimizer.zero_grad()
-                t3 = time.time()
-                print("backward time: ", t3 - t2)
+                        traj_loss, total_loss = DEFT_sim_train.step(
+                            frame_num_per_step,
+                            step
+                        )
+                        sum_traj_loss += traj_loss
+                        sum_total_loss += total_loss
+
+                    t2 = time.time()
+                    print("time for ", total_step_num, "steps: ", t2 - t1)
+
+                    # Record and print training loss
+                    training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
+                    # training_losses.append(traj_loss.cpu().detach().numpy() / train_time_horizon)
+                    training_epochs.append(training_iteration)
+
+                    # Backprop through the total loss
+                    sum_total_loss.backward(retain_graph=True)
+                    # total_loss.backward(retain_graph=True)
+                    optimizer.step()
+                    optimizer.zero_grad()
+                print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
+                prof.export_chrome_trace("reset_step_trace.json")
+                print('generated json file')
+
+
 
                 # Save training losses to pickle
                 save_pickle(training_losses,
