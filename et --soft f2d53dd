@@ -1,0 +1,86 @@
+[33m1b0ae69[m[33m ([m[1;36mHEAD -> [m[1;32munit_test[m[33m)[m Remove large JSON file from tracking
+[33m6e6f7ef[m working on gravity only unit test
+[33mf2d53dd[m[33m ([m[1;31morigin/unit_test[m[33m)[m updated unit test
+[33m922c2fc[m started unit test
+[33m406c5db[m inner loop gradient verification result
+[33mfde2c22[m allow the gradient functions to take batched input
+[33m25cba0c[m verified 12 analytical gradients
+[33mc520418[m gradient test example
+[33mc815cdd[m fix bug for dM
+[33md34f91f[m fixing the comments
+[33m63311c4[m partial derivative wrt M
+[33m71c9cec[m Intrinsic constraints func & grad wip: DX/X_init
+[33m4a589d3[m Intrinsic constraints func & grad wip: DX/X
+[33m402f507[m Add 2 sample gradient files from yizhou's update; Add .gitignore
+[33m5efeb5d[m Update DEFT_sim.py
+[33ma8bb5fc[m Update constraints_solver.py
+[33mfd068f7[m Update DEFT_func.py
+[33m119e467[m Update README.md
+[33mbc910cd[m Update requirements.txt
+[33mc84c9a1[m Update README.md
+[33m83f40c2[m Update README.md
+[33m0a3c310[m Update README.md
+[33mc01bae3[m Update README.md
+[33m2a7ddfa[m Update README.md
+[33m52b6447[m Update README.md
+[33mc604d03[m Update README.md
+[33madcf5ac[m Update README.md
+[33m16ae46d[m Update README.md
+[33m8fea991[m Add files via upload
+[33m9b93274[m Delete demo_image.png
+[33mff9a591[m Update README.md
+[33m1cc31d4[m Update README.md
+[33mb1dabbf[m Update README.md
+[33m5252b88[m Update README.md
+[33m1a51f3b[m Update README.md
+[33m615c4f5[m Update README.md
+[33maa72ad9[m Update README.md
+[33me5d2b98[m Rename DEFT_training.py to DEFT_train.py
+[33mdc42487[m Update README.md
+[33m29e0eb6[m Update README.md
+[33me4987ad[m Add files via upload
+[33me1ff025[m Update README.md
+[33m9b17e5a[m Update README.md
+[33md33277e[m Update README.md
+[33mf45bdbd[m Update README.md
+[33m110ae48[m Update README.md
+[33m79caa2a[m Update README.md
+[33m49e42f4[m Update README.md
+[33mfae78a1[m Add files via upload
+[33ma5c1110[m Update README.md
+[33me4329c3[m Update README.md
+[33m6afd3f9[m Update README.md
+[33m2ecf2c7[m Add files via upload
+[33m549e383[m Update README.md
+[33md2b6824[m Update README.md
+[33m8225906[m Update README.md
+[33mf4bd994[m Update README.md
+[33m9531795[m Update README.md
+[33m65d1a6b[m Update README.md
+[33mbe23507[m Update README.md
+[33mc3db7e9[m Update README.md
+[33ma057848[m Add files via upload
+[33m6328147[m Update README.md
+[33m9e809d7[m Update README.md
+[33m53cfda7[m Update README.md
+[33m61f0854[m Update README.md
+[33mb0c6d61[m Update README.md
+[33m37065e8[m Update README.md
+[33m034807e[m Update README.md
+[33m76f81f1[m Update README.md
+[33mb9b8e68[m Update README.md
+[33m0dbdc8d[m Update README.md
+[33m4fc18e2[m Update README.md
+[33m8eed1e1[m Update README.md
+[33m5f62482[m Add files via upload
+[33me9b6a64[m Update README.md
+[33mfb2c472[m Update README.md
+[33m5877b1a[m Create image_store
+[33mc8187af[m Delete sanity_check/image_storage
+[33m785a746[m Create image_storage
+[33m9638aac[m Delete sanity_check
+[33mb5e81b1[m Create sanity_check
+[33m6d1b915[m Merge remote-tracking branch 'origin/master'
+[33ma12cf3d[m image_update
+[33m13fd009[m Delete sanity_check/DEFT_1 directory
+[33m3522cb3[m Initial commit
