@@ -643,22 +643,7 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 vis = False
                 previous_b_DLOs_vertices_traj, b_DLOs_vertices_traj, target_b_DLOs_vertices_traj, m_u0_traj = data
 
-                # Forward pass through the DEFT model for train_time_horizon timesteps
-                # t2 = time.time()
-                # traj_loss, total_loss = DEFT_sim_train.iterative_sim(
-                #     train_time_horizon,
-                #     b_DLOs_vertices_traj,
-                #     previous_b_DLOs_vertices_traj,
-                #     target_b_DLOs_vertices_traj,
-                #     loss_func,
-                #     dt,
-                #     parent_theta_clamp,
-                #     child1_theta_clamp,
-                #     child2_theta_clamp,
-                #     inference_1_batch,
-                #     vis_type=vis_type,
-                #     vis=vis
-                # )
+
 
                 with torch.profiler.profile(
                         activities=[
@@ -669,13 +654,10 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                         profile_memory=False,  # Track memory usage
                         with_stack=True,  # Record call stack for detailed insights
                 ) as prof:
-
-
-
-
-                    t0 = time.time()
-
-                    DEFT_sim_train.reset(
+                    # Forward pass through the DEFT model for train_time_horizon timesteps
+                    # t2 = time.time()
+                    traj_loss, total_loss = DEFT_sim_train.iterative_sim(
+                        train_time_horizon,
                         b_DLOs_vertices_traj,
                         previous_b_DLOs_vertices_traj,
                         target_b_DLOs_vertices_traj,
@@ -688,43 +670,57 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                         vis_type=vis_type,
                         vis=vis
                     )
-                    t1 = time.time()
-                    print("reset time: ", t1-t0)
 
-                    frame_num_per_step = 1
-                    total_step_num = 1
-                    sum_traj_loss = 0.0
-                    sum_total_loss = 0.0
 
-                    for step in range(total_step_num):
-                        with torch.no_grad():
-                            traj_loss, total_loss = DEFT_sim_train.step(
-                                frame_num_per_step,
-                                step
-                            )
 
-                        traj_loss, total_loss = DEFT_sim_train.step(
-                            frame_num_per_step,
-                            step
-                        )
-                        sum_traj_loss += traj_loss
-                        sum_total_loss += total_loss
-
-                    t2 = time.time()
-                    print("time for ", total_step_num, "steps: ", t2 - t1)
+                    #
+                    # t0 = time.time()
+                    #
+                    # DEFT_sim_train.reset(
+                    #     b_DLOs_vertices_traj,
+                    #     previous_b_DLOs_vertices_traj,
+                    #     target_b_DLOs_vertices_traj,
+                    #     loss_func,
+                    #     dt,
+                    #     parent_theta_clamp,
+                    #     child1_theta_clamp,
+                    #     child2_theta_clamp,
+                    #     inference_1_batch,
+                    #     vis_type=vis_type,
+                    #     vis=vis
+                    # )
+                    # t1 = time.time()
+                    # print("reset time: ", t1-t0)
+                    #
+                    # frame_num_per_step = 1
+                    # total_step_num = 1
+                    # sum_traj_loss = 0.0
+                    # sum_total_loss = 0.0
+                    #
+                    # for step in range(total_step_num):
+                    #
+                    #     traj_loss, total_loss = DEFT_sim_train.step(
+                    #         frame_num_per_step,
+                    #         step
+                    #     )
+                    #     sum_traj_loss += traj_loss
+                    #     sum_total_loss += total_loss
+                    #
+                    # t2 = time.time()
+                    # print("time for ", total_step_num, "steps: ", t2 - t1)
 
                     # Record and print training loss
-                    training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
-                    # training_losses.append(traj_loss.cpu().detach().numpy() / train_time_horizon)
+                    # training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
+                    training_losses.append(traj_loss.cpu().detach().numpy() / train_time_horizon)
                     training_epochs.append(training_iteration)
 
                     # Backprop through the total loss
-                    sum_total_loss.backward(retain_graph=True)
-                    # total_loss.backward(retain_graph=True)
+                    # sum_total_loss.backward(retain_graph=True)
+                    total_loss.backward(retain_graph=True)
                     optimizer.step()
                     optimizer.zero_grad()
                 print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-                prof.export_chrome_trace("reset_step_trace.json")
+                prof.export_chrome_trace("iterative_sim_trace.json")
                 print('generated json file')
 
 
@@ -762,7 +758,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=100)
+    parser.add_argument("--train_time_horizon", type=int, default=1)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
