@@ -9,7 +9,8 @@ from numpy.core.defchararray import lower
 
 torch.set_default_dtype(torch.float64)
 import torch.nn as nn
-import gradient_test
+import gradient_IC
+import gradient_saver
 
 torch.set_default_dtype(torch.float64)
 
@@ -235,7 +236,7 @@ class constraints_enforcement(nn.Module):
         return rotation_matrix
 
     def Inextensibility_Constraint_Enforcement(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                               scale, mass_scale, zero_mask_num):
+                                               scale, mass_scale, zero_mask_num, undeformed_vertices, bkgrad):
         """
         Enforces inextensibility constraints for a single DLO by adjusting vertex positions
         so that the edge lengths stay near their nominal values.
@@ -255,6 +256,9 @@ class constraints_enforcement(nn.Module):
         """
         # Square of the nominal length for each edge
         nominal_length_square = nominal_length * nominal_length
+
+        # grad_per_ICitr = gradient_saver.BackwardGradientIC(current_vertices.size()[1])
+        grad_per_ICitr = bkgrad
 
         # Loop over each edge
         for i in range(current_vertices.size()[1] - 1):
@@ -289,7 +293,58 @@ class constraints_enforcement(nn.Module):
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
 
-        return current_vertices
+            # Update the gradient for the current vertices
+            grad_DX_X_step = gradient_IC.grad_DX_X_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices[:, i], current_vertices[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            )
+
+            grad_interest_DX_X = grad_per_ICitr.grad_DX_X[3*i : 3*(i+2), :].copy()
+            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
+            grad_step_DX_X = torch.cat(
+                torch.zeros((6, 3*i), dtype=torch.float64),
+                grad_DX_X_step,
+                torch.zeros((6, 3 * (current_vertices.size()[1] - i - 2)), dtype=torch.float64),
+            )
+
+            grad_per_ICitr.grad_DX_X[3*i : 3*(i+2), :] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
+
+            # Update the gradient for the undeformed vertices
+            grad_DX_Xinit_step = gradient_IC.grad_DX_Xinit_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices[:, i], current_vertices[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            )
+
+            grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[3*i : 3*(i+2), :].copy()
+            grad_chain_passed_DX_Xinit = grad_DX_X_step @ grad_interest_DX_Xinit
+            grad_step_DX_Xinit = torch.cat(
+                torch.zeros((6, 3*i), dtype=torch.float64),
+                grad_DX_Xinit_step,
+                torch.zeros((6, 3 * (current_vertices.size()[1] - i - 2)), dtype=torch.float64),
+            )
+
+            grad_per_ICitr.grad_DX_Xinit[3*i : 3*(i+2), :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
+
+            # Update the gradient for the mass scale
+            grad_DX_M_step = gradient_IC.grad_DX_M_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices[:, i], current_vertices[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            )
+
+            grad_interest_DX_M = grad_per_ICitr.grad_DX_M[3*i : 3*(i+2), :].copy()
+            grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
+            grad_step_DX_M = torch.cat(
+                torch.zeros((6, i), dtype=torch.float64),
+                grad_DX_M_step,
+                torch.zeros((6, current_vertices.size()[1] - i - 2), dtype=torch.float64),
+            )
+
+            grad_per_ICitr.grad_DX_M[3*i : 3*(i+2), :] = grad_interest_DX_M + grad_step_DX_M + grad_chain_passed_DX_M
+
+        return current_vertices, grad_per_ICitr
 
     def Inextensibility_Constraint_Enforcement_Coupling(self, parent_vertices, child_vertices, coupling_index,
                                                         coupling_mass_scale, selected_parent_index,
