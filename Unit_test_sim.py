@@ -43,8 +43,7 @@ class Unit_test_sim(nn.Module):
             * self.mass_diagonal.unsqueeze(-1).unsqueeze(-1)
         )  # shape: (batch, n_vert, 3, 3)
 
-        self.positions = self.undeformed_vert.clone()  # not wrapped in nn.Parameter
-        self.velocities = torch.zeros_like(self.positions)  # not learnable
+
 
         # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
 
@@ -57,27 +56,39 @@ class Unit_test_sim(nn.Module):
         acc = torch.linalg.solve(mass_matrix, total_force.unsqueeze(-1)).squeeze(-1)
         velocities = velocities + acc * dt
         positions = positions + velocities * dt  # not wrapped in nn.Parameter
-        return positions, velocities
+        return positions
 
-    def iterative_sim(self, time_horizon, positions_traj, previous_positions_traj,target_traj, loss_func):
+    def iterative_sim(self, time_horizon, positions_traj, previous_positions_traj,target_traj, loss_func,dt):
         traj_loss_eval = 0.0
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
 
         for t in range(time_horizon):
-            prev_positions = self.positions.clone()
-            positions,velocities = self.Numerical_Integration(self.mass_matrix,total_force, self.velocities, self.positions, self.dt)
+            if t == 0:
+                positions = positions_traj[:,t]
+                prev_positions = previous_positions_traj[:,t].clone()
+                velocities = (positions - prev_positions) / dt
+            else:
 
-            velocities = (positions - prev_positions) / self.dt
+                prev_positions = positions_old.clone()
+
+
+
+            positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
+                                                               positions, dt)
+            velocities = (positions - prev_positions) / dt
 
             gt_positions = target_traj[:, t]
-            gt_velocities = (target_traj[:, t] - positions_traj[:, t]) / self.dt
+            gt_velocities = (target_traj[:, t] - positions_traj[:, t]) / dt
             step_loss_pos = loss_func(positions, gt_positions)
             step_loss_vel = loss_func(velocities, gt_velocities)
 
             traj_loss_eval += step_loss_pos
             total_loss += (step_loss_pos + step_loss_vel)
 
-            positions_traj[:, t] = positions.detach()
+
+            # positions_traj[:, t] = positions.detach()
+            positions_old = positions.clone()
+
 
         return traj_loss_eval, total_loss

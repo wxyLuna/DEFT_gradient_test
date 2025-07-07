@@ -1,10 +1,14 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
 import numpy as np
-from Unit_test_sim import Unit_test_sim
-import pickle
 import matplotlib.pyplot as plt
+import pickle
+
+from Unit_test_sim import Unit_test_sim  # Your custom simulation class
+from unit_test_util import TrainSimpleTrajData, EvalSimpleTrajData
+import os
 
 # Hyperparameters
 batch = 1
@@ -13,65 +17,126 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-b_DLO_mass = torch.ones(batch, n_vert, device=device)
 time_horizon = 20
 epochs = 30
 dt = 1e-2
+n_samples = 64  # Number of trajectories for training/evaluation
 
 # Initialize simulation
+b_DLO_mass = torch.ones(batch, n_vert, device=device)
 sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
 sim.train()
 
-# Create target trajectory (falling under gravity)
-target_traj = torch.zeros(batch, time_horizon, n_vert, 3, device=device)
-for t in range(time_horizon):
-    target_traj[:, t] = sim.undeformed_vert.detach() + 0.5 * sim.gravity.detach() * (t * dt) ** 2
+# === Define Dataset class with previous_positions_traj generation ===
+class SimpleTrajectoryDataset(Dataset):
+    def __init__(self, target_trajs):
+        super().__init__()
+        self.target_trajs = target_trajs
 
-# Define optimizer (only train select parameters)
-optimizer = optim.Adam([
-    sim.undeformed_vert,
-    sim.mass_diagonal
+    def __len__(self):
+        return self.target_trajs.shape[0]
+
+    def __getitem__(self, idx):
+        traj = self.target_trajs[idx]  # [time_horizon, n_vert, 3]
+        previous_traj = torch.zeros_like(traj)
+        previous_traj[1:] = traj[:-1]
+        return previous_traj, traj
+
+# === Create train/eval datasets ===
+gravity = sim.gravity.detach()
+eval_gravity = gravity * 0.95
+undeformed = sim.undeformed_vert.detach()
+undeformed_vert = undeformed[0]
+
+train_target_traj = torch.zeros(n_samples, time_horizon, n_vert, 3, device=device)
+eval_target_traj = torch.zeros(n_samples, time_horizon, n_vert, 3, device=device)
+train_dataset = TrainSimpleTrajData(
+    undeformed_vert=undeformed_vert,
+    gravity=gravity,
+    time_horizon=time_horizon,
+    total_time=60,
+    n_samples=32,
+    dt=dt,
+    device=device
+)
+train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
+
+eval_dataset = EvalSimpleTrajData(
+    undeformed_vert=undeformed_vert,
+    gravity=gravity * 0.95,
+    time_horizon=time_horizon,
+    n_samples=16,
+    dt=dt,
+    device=device
+)
+eval_loader = DataLoader(eval_dataset, batch_size=batch, shuffle=False)
+
+
+# === Define optimizer and loss ===
+optimizer = optim.SGD([
+    # sim.undeformed_vert,
+    sim.mass_diagonal,
+    sim.gravity
 
 ], lr=1e-3)
-
 loss_func = nn.MSELoss()
+
 training_losses = []
 eval_losses = []
 training_epochs = []
 
-# Create eval trajectory with perturbed gravity
-eval_gravity = sim.gravity.detach() * 0.95
-eval_target_traj = torch.zeros(batch, time_horizon, n_vert, 3, device=device)
-for t in range(time_horizon):
-    eval_target_traj[:, t] = sim.undeformed_vert.detach() + 0.5 * eval_gravity * (t * dt) ** 2
-
+# === Training loop ===
 for epoch in range(epochs):
-    optimizer.zero_grad()
+    epoch_train_loss = 0.0
+    batch_count = 0
+    # if epoch == 0 and os.path.exists("gravity_only_model.pth"):
+    #     sim.load_state_dict(torch.load("gravity_only_model.pth"))
 
-    # Reset state
-    sim.positions.data = sim.undeformed_vert.data.clone()
-    sim.velocities.data.zero_()
-    positions_traj = torch.zeros(batch, time_horizon, n_vert, 3, device=device)
+    for previous_positions_traj, current_positions_traj,target_traj in train_loader:
 
-    # Forward and backward pass
-    traj_loss, total_loss = sim.iterative_sim(time_horizon, positions_traj, target_traj, loss_func)
-    total_loss.backward(retain_graph=True)
-    optimizer.step()
 
-    training_losses.append(traj_loss.item() / time_horizon)
+        traj_loss, total_loss = sim.iterative_sim(
+            time_horizon, current_positions_traj, previous_positions_traj, target_traj, loss_func, dt
+        )
+        total_loss.backward(retain_graph=True)
+        # print("mass_diagonal grad:", sim.mass_diagonal.grad)
+        # print("gravity grad:", sim.gravity.grad)
+        optimizer.step()
+        optimizer.zero_grad()
+
+        # After training
+
+
+        epoch_train_loss += traj_loss.item()
+        batch_count += 1
+    # torch.save(sim.state_dict(), 'gravity_only_model.pth')
+
+    avg_train_loss = epoch_train_loss / batch_count
+    training_losses.append(avg_train_loss)
     training_epochs.append(epoch)
 
-    # Evaluation
+    # === Evaluation ===
+    # Load trained parameters if a checkpoint exists
+
+
     with torch.no_grad():
-        sim.positions.data = sim.undeformed_vert.data.clone()
-        sim.velocities.data.zero_()
-        eval_positions_traj = torch.zeros(batch, time_horizon, n_vert, 3, device=device)
-        eval_loss, _ = sim.iterative_sim(time_horizon, eval_positions_traj, eval_target_traj, loss_func)
-        eval_losses.append(eval_loss.item() / time_horizon)
+        total_eval_loss = 0.0
 
-    print(f"Epoch {epoch+1}/{epochs} | Train Loss: {training_losses[-1]:.6f} | Eval Loss: {eval_losses[-1]:.6f}")
+        for previous_eval_traj, eval_positions_traj, eval_traj in eval_loader:
+            # eval_positions_traj = torch.zeros_like(eval_traj)  # Reset!
+            # eval_positions_traj = torch.zeros_like(eval_traj)
 
-    # Save logs
+            eval_loss, _ = sim.iterative_sim(
+                time_horizon, eval_positions_traj, previous_eval_traj, eval_traj, loss_func, dt
+            )
+            total_eval_loss += eval_loss.item()
+        avg_eval_loss = total_eval_loss / len(eval_loader)
+        eval_losses.append(avg_eval_loss)
+
+    print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.6f} | Eval Loss: {avg_eval_loss:.6f}")
+
+
+    # === Save logs ===
     with open("training_losses.pkl", "wb") as f:
         pickle.dump(training_losses, f)
     with open("training_epochs.pkl", "wb") as f:
@@ -79,7 +144,7 @@ for epoch in range(epochs):
     with open("eval_losses.pkl", "wb") as f:
         pickle.dump(eval_losses, f)
 
-    # Plot
+    # === Plot loss curve ===
     plt.figure(figsize=(8, 5))
     plt.plot(training_epochs, training_losses, marker='o', label="Train Loss")
     plt.plot(training_epochs, eval_losses, marker='x', label="Eval Loss")
