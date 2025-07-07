@@ -42,7 +42,7 @@ if __name__ == "__main__":
         t1 = time.time()
         print(f"Time taken for first backward pass: {t1 - t0:.6f} seconds")
 
-        # 2 inputs, 2 outputs
+        # 3 inputs, 3 outputs
         output2 = model(x2_tensor)
         loss2 = nn.MSELoss()(output2, y2_tensor)
         
@@ -53,7 +53,7 @@ if __name__ == "__main__":
         t3 = time.time()
         print(f"Time taken for second backward pass: {t3 - t2:.6f} seconds")
 
-        # 1 input, 2 outputs
+        # 1 input, 3 outputs
         mid_output1 = model(x1_tensor)
         mid_output2 = model(mid_output1)
         output3 = model(mid_output2)
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         t5 = time.time()
         print(f"Time taken for third backward pass: {t5 - t4:.6f} seconds")
 
-        # 1 input, 2 outputs, detached
+        # 1 input, 3 outputs, detached
         mid_output1 = model(x1_tensor)
         mid_output2 = model(mid_output1.detach())
         output4 = model(mid_output2.detach())

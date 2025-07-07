@@ -25,6 +25,7 @@ import os
 import numpy as np
 sys.path.append(module_dir)
 from GNN_tree import BatchedGNNModel
+import gradient_saver
 
 import time
 
@@ -201,6 +202,7 @@ class DEFT_sim(nn.Module):
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(b_undeformed_vert.clone(), self.zero_mask)
         )
+        self.b_undeformed_vert = b_undeformed_vert.clone()
 
         # Create a mask to handle situations where child branches end sooner
         m_restRegionL_mask = torch.ones_like(self.m_restRegionL)
@@ -420,6 +422,8 @@ class DEFT_sim(nn.Module):
             selected_parent_index,
             selected_children_index
         )
+
+        self.bkgrad = gradient_saver.BackwardGradientIC(n_vert) # or n_branch * n_vert?
 
 
     def Rod_Init(self, batch, init_direction, m_restEdgeL, clamped_index, inference_1_batch):
@@ -1201,7 +1205,7 @@ class DEFT_sim(nn.Module):
                     )
 
                     # Finally, general inextensibility constraints along each branch
-                    b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                         self.batch,
                         b_DLOs_vertices,
                         self.batched_m_restEdgeL,
@@ -1209,8 +1213,14 @@ class DEFT_sim(nn.Module):
                         self.clamped_index,
                         self.inext_scale,
                         self.mass_scale,
-                        self.zero_mask_num
+                        self.zero_mask_num,
+                        self.b_undeformed_vert,
+                        self.bkgrad
                     )
+
+                    self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+                    self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+                    self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
             # 6) Update velocities based on final positions + compute losses
             b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
