@@ -27,6 +27,7 @@ sys.path.append(module_dir)
 from GNN_tree import BatchedGNNModel
 from torch.autograd.profiler import record_function
 import time
+import gradient_saver
 
 class DEFT_sim(nn.Module):
     """
@@ -434,6 +435,10 @@ class DEFT_sim(nn.Module):
         )
 
 
+        self.bkgrad = gradient_saver.BackwardGradientIC(self.batch*self.n_branch,n_vert) # or n_branch * n_vert?
+
+
+
     def Rod_Init(self, batch, init_direction, m_restEdgeL, clamped_index, inference_1_batch):
         """
         Initialize rod geometry by enforcing inextensibility constraints once,
@@ -458,20 +463,21 @@ class DEFT_sim(nn.Module):
             )
             undeformed_vert = torch.from_numpy(undeformed_vert)
         else:
-            print("inextensibility at rod init")
-            with torch.autograd.profiler.record_function("Inextensibility_forward_rod_init"):
 
-                undeformed_vert = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-                    batch,
-                    (self.undeformed_vert.clone()).repeat(batch, 1, 1),
-                    m_restEdgeL,
-                    self.mass_matrix,
-                    clamped_index,
-                    self.inext_scale,
-                    self.mass_scale,
-                    self.zero_mask_num,
+            undeformed_vert = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                batch,
+                (self.undeformed_vert.clone()).repeat(batch, 1, 1),
+                m_restEdgeL,
+                self.mass_matrix,
+                clamped_index,
+                self.inext_scale,
+                self.mass_scale,
+                self.zero_mask_num,
+                self.b_undeformed_vert,
+                self.bkgrad,
+                self.n_branch
+            )
 
-                )
 
         # Compute edges for the (adjusted) undeformed shape
         m_edges = computeEdges(undeformed_vert, self.zero_mask.repeat(batch, 1))
@@ -1223,19 +1229,28 @@ class DEFT_sim(nn.Module):
                     )
 
                     # Finally, general inextensibility constraints along each branch
-                    print("inextensibility at iterative sim else")
-                    with torch.autograd.profiler.record_function("Inextensibility_forward"):
 
-                        b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-                            self.batch,
-                            b_DLOs_vertices,
-                            self.batched_m_restEdgeL,
-                            self.mass_matrix,
-                            self.clamped_index,
-                            self.inext_scale,
-                            self.mass_scale,
-                            self.zero_mask_num
-                        )
+                    b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                        self.batch,
+                        b_DLOs_vertices,
+                        self.batched_m_restEdgeL,
+                        self.mass_matrix,
+                        self.clamped_index,
+                        self.inext_scale,
+                        self.mass_scale,
+                        self.zero_mask_num,
+                        self.b_undeformed_vert,
+                        self.bkgrad,
+                        self.n_branch
+                    )
+
+                    self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+                    self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+                    self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+                    print('grad_DX_X',self.bkgrad.grad_DX_X)
+                    print('grad_DX_Xinit',self.bkgrad.grad_DX_Xinit)
+                    print('grad_DX_M',self.bkgrad.grad_DX_M)
+
 
             # 6) Update velocities based on final positions + compute losses
             b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
