@@ -1,6 +1,7 @@
 import time
 from itertools import repeat, permutations
 
+import numpy as np
 import torch
 import pytorch3d
 import pytorch3d.transforms.rotation_conversions
@@ -236,7 +237,7 @@ class constraints_enforcement(nn.Module):
         return rotation_matrix
 
     def Inextensibility_Constraint_Enforcement(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                               scale, mass_scale, zero_mask_num, undeformed_vertices, bkgrad):
+                                               scale, mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch):
         """
         Enforces inextensibility constraints for a single DLO by adjusting vertex positions
         so that the edge lengths stay near their nominal values.
@@ -259,6 +260,7 @@ class constraints_enforcement(nn.Module):
 
         # grad_per_ICitr = gradient_saver.BackwardGradientIC(current_vertices.size()[1])
         grad_per_ICitr = bkgrad
+        undeformed_vertices = undeformed_vertices.repeat(batch,1,1)
 
         # Loop over each edge
         for i in range(current_vertices.size()[1] - 1):
@@ -300,15 +302,16 @@ class constraints_enforcement(nn.Module):
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
             )
 
-            grad_interest_DX_X = grad_per_ICitr.grad_DX_X[3*i : 3*(i+2), :].copy()
-            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
-            grad_step_DX_X = torch.cat(
-                torch.zeros((6, 3*i), dtype=torch.float64),
-                grad_DX_X_step,
-                torch.zeros((6, 3 * (current_vertices.size()[1] - i - 2)), dtype=torch.float64),
-            )
+            grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3*i : 3*(i+2), :].copy()
 
-            grad_per_ICitr.grad_DX_X[3*i : 3*(i+2), :] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
+            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
+            grad_step_DX_X = np.concatenate((
+                np.zeros((n_branch*batch, 6, 3 * i)),
+                grad_DX_X_step,
+                np.zeros((n_branch*batch, 6, 3 * (current_vertices.size()[1] - i - 2)))
+            ), axis=2)
+
+            grad_per_ICitr.grad_DX_X[:,3*i : 3*(i+2), :] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
 
             # Update the gradient for the undeformed vertices
             grad_DX_Xinit_step = gradient_IC.grad_DX_Xinit_ICitr_batch(
@@ -317,15 +320,15 @@ class constraints_enforcement(nn.Module):
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
             )
 
-            grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[3*i : 3*(i+2), :].copy()
+            grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[:,3*i : 3*(i+2), :].copy()
             grad_chain_passed_DX_Xinit = grad_DX_X_step @ grad_interest_DX_Xinit
-            grad_step_DX_Xinit = torch.cat(
-                torch.zeros((6, 3*i), dtype=torch.float64),
+            grad_step_DX_Xinit = np.concatenate((
+                np.zeros((n_branch * batch, 6, 3 * i)),
                 grad_DX_Xinit_step,
-                torch.zeros((6, 3 * (current_vertices.size()[1] - i - 2)), dtype=torch.float64),
-            )
+                np.zeros((n_branch * batch, 6, 3 * (current_vertices.size()[1] - i - 2)))
+            ), axis = 2)
 
-            grad_per_ICitr.grad_DX_Xinit[3*i : 3*(i+2), :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
+            grad_per_ICitr.grad_DX_Xinit[:,3*i : 3*(i+2), :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
 
             # Update the gradient for the mass scale
             grad_DX_M_step = gradient_IC.grad_DX_M_ICitr_batch(
@@ -334,15 +337,17 @@ class constraints_enforcement(nn.Module):
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
             )
 
-            grad_interest_DX_M = grad_per_ICitr.grad_DX_M[3*i : 3*(i+2), :].copy()
+            grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:,3*i : 3*(i+2), :].copy()
             grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
-            grad_step_DX_M = torch.cat(
-                torch.zeros((6, i), dtype=torch.float64),
-                grad_DX_M_step,
-                torch.zeros((6, current_vertices.size()[1] - i - 2), dtype=torch.float64),
-            )
 
-            grad_per_ICitr.grad_DX_M[3*i : 3*(i+2), :] = grad_interest_DX_M + grad_step_DX_M + grad_chain_passed_DX_M
+            grad_step_DX_M = np.concatenate((
+                np.zeros((n_branch * batch, 6, i)),
+                grad_DX_M_step,
+                np.zeros((n_branch * batch, 6, (current_vertices.size()[1] - i - 2)))
+            ), axis=2)
+
+
+            grad_per_ICitr.grad_DX_M[:,3*i : 3*(i+2), :] = grad_interest_DX_M + grad_step_DX_M + grad_chain_passed_DX_M
 
         return current_vertices, grad_per_ICitr
 

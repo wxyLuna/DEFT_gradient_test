@@ -423,7 +423,7 @@ class DEFT_sim(nn.Module):
             selected_children_index
         )
 
-        self.bkgrad = gradient_saver.BackwardGradientIC(n_vert) # or n_branch * n_vert?
+        self.bkgrad = gradient_saver.BackwardGradientIC(self.batch*self.n_branch,n_vert) # or n_branch * n_vert?
 
 
     def Rod_Init(self, batch, init_direction, m_restEdgeL, clamped_index, inference_1_batch):
@@ -456,7 +456,10 @@ class DEFT_sim(nn.Module):
                 clamped_index,
                 self.inext_scale,
                 self.mass_scale,
-                self.zero_mask_num
+                self.zero_mask_num,
+                self.b_undeformed_vert,
+                self.bkgrad,
+                self.n_branch
             )
 
         # Compute edges for the (adjusted) undeformed shape
@@ -1215,12 +1218,16 @@ class DEFT_sim(nn.Module):
                         self.mass_scale,
                         self.zero_mask_num,
                         self.b_undeformed_vert,
-                        self.bkgrad
+                        self.bkgrad,
+                        self.n_branch
                     )
 
                     self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                     self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
                     self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+                    print('grad_DX_X',self.bkgrad.grad_DX_X)
+                    print('grad_DX_Xinit',self.bkgrad.grad_DX_Xinit)
+                    print('grad_DX_M',self.bkgrad.grad_DX_M)
 
             # 6) Update velocities based on final positions + compute losses
             b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
