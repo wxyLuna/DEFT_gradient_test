@@ -19,8 +19,8 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     - grad_10: [batch_size, 3, 3] gradient of DX_1 with respect to X_0
     - grad_11: [batch_size, 3, 3] gradient of DX_1 with respect to X_1
     """
-    M_0, M_1 = np.asarray(M_0), np.asarray(M_1)
-    X_0, X_1 = np.asarray(X_0), np.asarray(X_1)
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
     X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
     batch_size = M_0.shape[0]
 
@@ -85,6 +85,9 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     - grad_11: [batch_size, 3, 3] gradient of DX_1 with respect to X_1_init
     """
     batch_size = M_0.shape[0]
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+
 
     # Compute M_param for each batch
     M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
@@ -135,8 +138,8 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     - grad_M_11: [batch_size, 3, 1] gradient of DX_1 with respect to M_1
     """
     batch_size = M_0.shape[0]
-    M_0, M_1 = np.asarray(M_0), np.asarray(M_1)
-    X_0, X_1 = np.asarray(X_0), np.asarray(X_1)
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
     X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
 
     # Compute M_param for each batch

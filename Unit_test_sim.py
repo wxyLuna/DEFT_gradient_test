@@ -13,6 +13,9 @@ module_dir = "residual_learning_nn"
 import sys
 import os
 sys.path.append(module_dir)
+from constraints_solver import constraints_enforcement
+from util import rotation_matrix, computeW, computeLengths, computeEdges, visualize_tensors_3d_in_same_plot_no_zeros
+import gradient_saver
 
 class Unit_test_sim(nn.Module):
     def __init__(self, batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device):
@@ -30,7 +33,16 @@ class Unit_test_sim(nn.Module):
         ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
 
         rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
+        self.b_undeformed_vert = rest_vert.clone()
+        self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
+        self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
+        self.m_restEdgeL, self.m_restRegionL = computeLengths(
+            computeEdges(self.b_undeformed_vert.clone(), self.zero_mask)
+        )
+        self.batched_m_restEdgeL = self.m_restEdgeL.repeat(self.batch, 1, 1).view(-1, n_edge)
         self.undeformed_vert = nn.Parameter(rest_vert)
+        ## for storing the old gradients from inextensibility enforcement
+        self.bkgrad = gradient_saver.BackwardGradientIC(self.batch *n_branch, n_vert)
 
         self.gravity = nn.Parameter(torch.tensor((0, 0, -9.81), device=device))
         self.dt = 1e-2
@@ -42,10 +54,19 @@ class Unit_test_sim(nn.Module):
             .repeat(batch, n_vert, 1, 1)
             * self.mass_diagonal.unsqueeze(-1).unsqueeze(-1)
         )  # shape: (batch, n_vert, 3, 3)
+        mass_scale1 = self.mass_matrix[:, 1:] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
+        mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
+        self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
+        self.constraints_enforcement = constraints_enforcement(n_branch)
+        self.clamped_index = torch.tensor([[1.0, 0.0, 0.0, 1.0]]) # hardcoded clamped index for the first vertex
+        self.inext_scale = self.clamped_index * 1e20 # clamped points does not move
+        self.n_branch=n_branch
+
 
 
 
         # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
+
 
     def External_Force(self, mass_matrix
                        ):
@@ -76,6 +97,28 @@ class Unit_test_sim(nn.Module):
 
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                positions, dt)
+
+            positions, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                self.batch,
+                positions,
+                self.batched_m_restEdgeL, ## change to nominal length
+                self.mass_matrix,
+                self.clamped_index,
+                self.inext_scale,
+                self.mass_scale,
+                self.zero_mask_num,
+                self.b_undeformed_vert,
+                self.bkgrad,
+                self.n_branch
+            )
+
+            self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+            self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+            self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+            print('grad_DX_X', self.bkgrad.grad_DX_X)
+            print('grad_DX_Xinit', self.bkgrad.grad_DX_Xinit)
+            print('grad_DX_M', self.bkgrad.grad_DX_M)
+
             velocities = (positions - prev_positions) / dt
 
             gt_positions = target_traj[:, t]

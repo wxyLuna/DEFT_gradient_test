@@ -1,5 +1,7 @@
 import torch
 from torch.utils.data import Dataset
+import torch.nn.functional as F
+
 
 class TrainSimpleTrajData(Dataset):
     def __init__(self, undeformed_vert, gravity, time_horizon, total_time, n_samples, dt, device="cpu"):
@@ -13,8 +15,10 @@ class TrainSimpleTrajData(Dataset):
 
         for _ in range(n_samples):
             full_traj = torch.zeros(total_time, undeformed_vert.shape[0], 3, device=device)
-            for t in range(total_time):
-                full_traj[t] = undeformed_vert + 0.5 * gravity * (t * dt) ** 2
+            random_gravity = torch.randn_like(undeformed_vert[0])  # shape (4, 3)
+            random_gravity = F.normalize(random_gravity, dim=0) * 9.81
+        for t in range(total_time):
+            full_traj[t] = undeformed_vert[0] + 0.5 * random_gravity * (t * dt) ** 2
 
             # generate sliding window segments
             for i in range(total_time - 2 - time_horizon):

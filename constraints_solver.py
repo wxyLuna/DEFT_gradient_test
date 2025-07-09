@@ -272,6 +272,7 @@ class constraints_enforcement(nn.Module):
             current_vertices (torch.Tensor): Updated vertex positions enforcing length constraints.
         """
         # Square of the nominal length for each edge
+        print('entered inextensibility constraint enforcement')
         nominal_length_square = nominal_length * nominal_length
 
         # grad_per_ICitr = gradient_saver.BackwardGradientIC(current_vertices.size()[1])
@@ -280,6 +281,7 @@ class constraints_enforcement(nn.Module):
 
         # Loop over each edge
         for i in range(current_vertices.size()[1] - 1):
+            print('entering edge loop')
             # Extract the 'edge' vector, masked by zero_mask_num
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
 
@@ -295,6 +297,7 @@ class constraints_enforcement(nn.Module):
             # If all edges are within tolerance, skip
             are_all_close_to_zero = torch.all(torch.abs(l) < self.tolerance)
             if are_all_close_to_zero:
+                print('all edges are within tolerance, skipping')
                 continue
 
             # l_cat used for scaling -> shape (batch,) -> repeated
@@ -312,6 +315,7 @@ class constraints_enforcement(nn.Module):
             ).view(-1, 2, 3)
 
             # Update the gradient for the current vertices
+            print('calculating gradient for current vertices')
             grad_DX_X_step = gradient_IC.grad_DX_X_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices[:, i], current_vertices[:, i + 1],

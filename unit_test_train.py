@@ -74,7 +74,7 @@ eval_loader = DataLoader(eval_dataset, batch_size=batch, shuffle=False)
 
 # === Define optimizer and loss ===
 optimizer = optim.SGD([
-    # sim.undeformed_vert,
+    sim.undeformed_vert,
     sim.mass_diagonal,
     sim.gravity
 
@@ -118,13 +118,13 @@ for epoch in range(epochs):
     # === Evaluation ===
     # Load trained parameters if a checkpoint exists
 
-
+    sim.eval()
     with torch.no_grad():
         total_eval_loss = 0.0
+        eval_positions_traj = undeformed_vert.expand(batch, n_vert, 3).unsqueeze(1).repeat(1, time_horizon, 1, 1)
 
-        for previous_eval_traj, eval_positions_traj, eval_traj in eval_loader:
-            # eval_positions_traj = torch.zeros_like(eval_traj)  # Reset!
-            # eval_positions_traj = torch.zeros_like(eval_traj)
+        for previous_eval_traj, _, eval_traj in eval_loader:
+            eval_positions_traj = torch.zeros_like(eval_traj)
 
             eval_loss, _ = sim.iterative_sim(
                 time_horizon, eval_positions_traj, previous_eval_traj, eval_traj, loss_func, dt

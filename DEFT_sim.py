@@ -198,8 +198,7 @@ class DEFT_sim(nn.Module):
         # zero_mask: tracks vertices that may not exist (e.g., in shorter child branches)
         self.zero_mask = torch.all(b_undeformed_vert[:, 1:] == 0, dim=-1)
 
-        # self.b_undeformed_vert = b_undeformed_vert
-
+        self.b_undeformed_vert = b_undeformed_vert.clone()
         # Compute reference lengths of edges and Voronoi region
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(b_undeformed_vert.clone(), self.zero_mask)
