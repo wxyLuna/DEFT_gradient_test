@@ -98,7 +98,7 @@ class Unit_test_sim(nn.Module):
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                positions, dt)
 
-            positions, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+            positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 self.batch,
                 positions,
                 self.batched_m_restEdgeL, ## change to nominal length
@@ -119,11 +119,71 @@ class Unit_test_sim(nn.Module):
             print('grad_DX_Xinit', self.bkgrad.grad_DX_Xinit)
             print('grad_DX_M', self.bkgrad.grad_DX_M)
 
-            velocities = (positions - prev_positions) / dt
+            d_positions = torch.tensor([[[0.0, 0.0, 0.0],
+                                         [0.0, 0.0, 0.0],
+                                         [0.0, 0.0, 0.0],
+                                         [0.0, 0.0, 0.0]]],
+                                        device=self.device)
+            d_mass_matrix = torch.tensor([[[[1e-4, 0.0, 0.0],
+                                            [0.0, 1e-4, 0.0],
+                                            [0.0, 0.0, 1e-4]],
+                                           [[0.0, 0.0, 0.0],
+                                            [0.0, 0.0, 0.0],
+                                            [0.0, 0.0, 0.0]],
+                                           [[0.0, 0.0, 0.0],
+                                            [0.0, 0.0, 0.0],
+                                            [0.0, 0.0, 0.0]],
+                                           [[0.0, 0.0, 0.0],
+                                            [0.0, 0.0, 0.0],
+                                            [0.0, 0.0, 0.0]]]],
+                                           device=self.device)
+            
+            positions_negative = positions - d_positions
+            positions_positive = positions + d_positions
+            mass_negative = self.mass_matrix - d_mass_matrix
+            mass_positive = self.mass_matrix + d_mass_matrix
+
+            positions_ICE_neg, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                self.batch,
+                positions_negative,
+                self.batched_m_restEdgeL,  # change to nominal length
+                mass_negative,
+                self.clamped_index,
+                self.inext_scale,
+                self.mass_scale,
+                self.zero_mask_num,
+                self.b_undeformed_vert,
+                self.bkgrad,
+                self.n_branch
+            )
+
+            delta_positions_ICE_neg = (positions_ICE_neg - positions_negative)
+
+            positions_ICE_pos, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                self.batch,
+                positions_positive,
+                self.batched_m_restEdgeL,  # change to nominal length
+                mass_positive,
+                self.clamped_index,
+                self.inext_scale,
+                self.mass_scale,
+                self.zero_mask_num,
+                self.b_undeformed_vert,
+                self.bkgrad,
+                self.n_branch
+            )
+
+            delta_positions_ICE_pos = (positions_ICE_pos - positions_positive)
+
+            d_delta_positions_ICE = (delta_positions_ICE_pos - delta_positions_ICE_neg) / 2
+
+            analytical_d_delta_positions_ICE = self.bkgrad.grad_DX_X @ positions + self.mass_matrix @ self.bkgrad.grad_DX_M
+
+            velocities = (positions_ICE - prev_positions) / dt
 
             gt_positions = target_traj[:, t]
             gt_velocities = (target_traj[:, t] - positions_traj[:, t]) / dt
-            step_loss_pos = loss_func(positions, gt_positions)
+            step_loss_pos = loss_func(positions_ICE, gt_positions)
             step_loss_vel = loss_func(velocities, gt_velocities)
 
             traj_loss_eval += step_loss_pos
@@ -131,7 +191,7 @@ class Unit_test_sim(nn.Module):
 
 
             # positions_traj[:, t] = positions.detach()
-            positions_old = positions.clone()
+            positions_old = positions_ICE.clone()
 
 
         return traj_loss_eval, total_loss
