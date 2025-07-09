@@ -59,7 +59,7 @@ class Unit_test_sim(nn.Module):
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
         self.clamped_index = torch.tensor([[1.0, 0.0, 0.0, 1.0]]) # hardcoded clamped index for the first vertex
-        self.inext_scale = self.clamped_index * 1e20 # clamped points does not move
+        self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
         self.n_branch=n_branch
 
 
@@ -86,10 +86,12 @@ class Unit_test_sim(nn.Module):
 
         for t in range(time_horizon):
             if t == 0:
+                # print('at time step', t)
                 positions = positions_traj[:,t]
                 prev_positions = previous_positions_traj[:,t].clone()
                 velocities = (positions - prev_positions) / dt
             else:
+                # print('else at time step', t)
 
                 prev_positions = positions_old.clone()
 
@@ -97,6 +99,7 @@ class Unit_test_sim(nn.Module):
 
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                positions, dt)
+
 
             positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 self.batch,
@@ -115,9 +118,9 @@ class Unit_test_sim(nn.Module):
             self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
             self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
             self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
-            print('grad_DX_X', self.bkgrad.grad_DX_X)
-            print('grad_DX_Xinit', self.bkgrad.grad_DX_Xinit)
-            print('grad_DX_M', self.bkgrad.grad_DX_M)
+            # print('grad_DX_X', self.bkgrad.grad_DX_X)
+            # print('grad_DX_Xinit', self.bkgrad.grad_DX_Xinit)
+            # print('grad_DX_M', self.bkgrad.grad_DX_M)
 
             d_positions = torch.tensor([[[0.0, 0.0, 0.0],
                                          [0.0, 0.0, 0.0],
@@ -156,6 +159,8 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad,
                 self.n_branch
             )
+            print('positions_ICE_neg',positions_ICE_neg)
+            print('positions_negative',positions_negative)
 
             delta_positions_ICE_neg = (positions_ICE_neg - positions_negative)
 
@@ -172,14 +177,23 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad,
                 self.n_branch
             )
+            print('positions_ICE_pos', positions_ICE_pos)
+            print('positions_positive', positions_positive)
 
             delta_positions_ICE_pos = (positions_ICE_pos - positions_positive)
 
             d_delta_positions_ICE = (delta_positions_ICE_pos - delta_positions_ICE_neg) / 2
 
-            analytical_d_delta_positions_ICE = self.bkgrad.grad_DX_X @ positions + self.mass_matrix @ self.bkgrad.grad_DX_M
+            d_mass_matrix_block = torch.block_diag(*d_mass_matrix[0]).unsqueeze(0)  # → (1, 12, 12)
+            d_positions = d_positions.detach().cpu().numpy()
+            d_mass_matrix_block = d_mass_matrix_block.detach().cpu().numpy()
+            analytical_d_delta_positions_ICE = self.bkgrad.grad_DX_X @ d_positions.reshape(1,-1,1) + d_mass_matrix_block @ self.bkgrad.grad_DX_M
+            #mass_matrix expand to (1,12,12)diagonally position flatten (1,12,1)
+            print('d_delta_positions_ICE', d_delta_positions_ICE)
+            print('analytical_d_delta_positions_ICE', analytical_d_delta_positions_ICE)
 
             velocities = (positions_ICE - prev_positions) / dt
+
 
             gt_positions = target_traj[:, t]
             gt_velocities = (target_traj[:, t] - positions_traj[:, t]) / dt

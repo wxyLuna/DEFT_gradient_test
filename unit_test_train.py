@@ -95,6 +95,7 @@ for epoch in range(epochs):
     for previous_positions_traj, current_positions_traj,target_traj in train_loader:
 
 
+
         traj_loss, total_loss = sim.iterative_sim(
             time_horizon, current_positions_traj, previous_positions_traj, target_traj, loss_func, dt
         )
