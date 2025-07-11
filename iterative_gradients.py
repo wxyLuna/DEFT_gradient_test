@@ -18,6 +18,9 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     - DX_1: [batch_size, 3, 1] position change of vertex i+1
     """
     batch_size = M_0.shape[0]
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+    X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
 
 
     # Compute M_param for each batch
@@ -26,10 +29,11 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     # Compute Edge and Edge_init for each batch
 
     Edge = X_1 - X_0  # [batch_size, 3, 1]
-    Edge = Edge.numpy().transpose(0, 2, 1)
+    Edge = np.expand_dims(Edge,axis=-1)
+
 
     Edge_init = X_1_init - X_0_init  # [batch_size, 3, 1]
-
+    Edge_init=np.expand_dims(Edge_init,axis=-1)
     # Compute Edge lengths for each batch
     Edge_length = np.linalg.norm(Edge, axis=1, keepdims=True)  # [batch_size, 1, 1]
     Edge_length_init = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
@@ -39,6 +43,8 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     # Compute DX_0 and DX_1 for each batch
     DX_0 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, Edge) * lambda_param  # [batch_size, 3, 1]
+    # DX_0 = np.matmul(M_1, np.matmul(M_param, Edge)) * lambda_param
+
     DX_1 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param, Edge) * lambda_param  # [batch_size, 3, 1]
 
     return DX_0, DX_1

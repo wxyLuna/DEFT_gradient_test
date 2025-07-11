@@ -18,9 +18,9 @@ n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
 time_horizon = 1#20
-epochs = 30
+epochs = 1
 dt = 1e-2
-n_samples = 64  # Number of trajectories for training/evaluation
+n_samples = 1  # Number of trajectories for training/evaluation
 
 # Initialize simulation
 b_DLO_mass = torch.ones(batch, n_vert, device=device)

@@ -14,6 +14,7 @@ import torch.nn as nn
 
 import gradient_IC
 import gradient_saver
+from iterative_gradients import func_DX_ICitr_batch
 
 torch.set_default_dtype(torch.float64)
 
@@ -282,7 +283,7 @@ class constraints_enforcement(nn.Module):
 
         # Loop over each edge
         # for i in range(current_vertices.size()[1] - 1):
-        for i in range(1):
+        for i in range(2):
 
 
             # Extract the 'edge' vector, masked by zero_mask_num
@@ -326,6 +327,22 @@ class constraints_enforcement(nn.Module):
                     .repeat(1, 2, 1)
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
+            delta_x = (l_scale @ updated_edges.unsqueeze(dim=1)
+                    .repeat(1, 2, 1)
+                    .view(-1, 3, 1)
+            ).view(-1, 2, 3)
+            # print('DX within inextensibility constraint enforcement:', delta_x)
+            # compute func_DX for sanity check
+            DX_0, DX_1 = func_DX_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices[:, i], current_vertices[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            )
+            DX_0 /= scale[:, i]
+            DX_1  /= scale[:, i]
+            # print('DX_0 properly scaled',DX_0)
+            # print('DX_1 properly scaled',DX_1)
+            print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
 
 
 
