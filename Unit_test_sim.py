@@ -16,6 +16,7 @@ sys.path.append(module_dir)
 from constraints_solver import constraints_enforcement
 from util import rotation_matrix, computeW, computeLengths, computeEdges, visualize_tensors_3d_in_same_plot_no_zeros
 import gradient_saver
+import numpy as np
 
 class Unit_test_sim(nn.Module):
     def __init__(self, batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device):
@@ -25,11 +26,27 @@ class Unit_test_sim(nn.Module):
         self.device = device
         self.batch = batch
 
+        # rest_vert = torch.tensor([
+        #     [0.893471, -0.133465, 0.018059],
+        #     [0.590795, -0.144219, 0.021808],
+        #     [0.200583, -0.146497, 0.01727],
+        #     [-0.094659, -0.186181, 0.012403]
+        # ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
         rest_vert = torch.tensor([
             [0.893471, -0.133465, 0.018059],
+            # [0.880771, -0.119666, 0.017733],
+            [0.791946, -0.084258, 0.009944],
+            # [0.680462, -0.102366, 0.018528],
             [0.590795, -0.144219, 0.021808],
+            # [0.494905, -0.156384, 0.017816],
+            [0.396916, -0.143114, 0.021549],
+            # [0.299291, -0.148755, 0.014955],
             [0.200583, -0.146497, 0.01727],
+            # [0.09586, -0.142385, 0.016456],
+            [-0.000782, -0.147084, 0.016081],
+            # [-0.071514, -0.17382, 0.015446]
             [-0.094659, -0.186181, 0.012403]
+
         ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
 
         rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
@@ -58,7 +75,7 @@ class Unit_test_sim(nn.Module):
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
-        self.clamped_index = torch.tensor([[1.0, 0.0, 0.0, 1.0]]) # hardcoded clamped index for the first vertex
+        self.clamped_index = torch.tensor([[0.0, 1.0,0,0,0, 1.0, 1.0]]) # hardcoded clamped index for the first vertex
         self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
         self.n_branch=n_branch
 
@@ -97,8 +114,11 @@ class Unit_test_sim(nn.Module):
 
 
 
+
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
-                                                               positions, dt)
+                                                               prev_positions, dt)
+
+            positions_pre_constraint = positions.clone()
 
 
             positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
@@ -114,6 +134,7 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad,
                 self.n_branch
             )
+            # print('positions_ICE', positions_ICE)
 
             self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
             self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
@@ -125,71 +146,106 @@ class Unit_test_sim(nn.Module):
             d_positions = torch.tensor([[[0.0, 0.0, 0.0],
                                          [0.0, 0.0, 0.0],
                                          [0.0, 0.0, 0.0],
+                                         [0.0, 0.0, 0.0],
+                                         [0.0, 0.0, 0.0],
+                                         [0.0, 0.0, 0.0],
                                          [0.0, 0.0, 0.0]]],
                                         device=self.device)
-            d_mass_matrix = torch.tensor([[[[1e-4, 0.0, 0.0],
-                                            [0.0, 1e-4, 0.0],
-                                            [0.0, 0.0, 1e-4]],
+            d_mass_matrix = torch.tensor([[[[1e-1, 0.0, 0.0],
+                                            [0.0, 1e-1, 0.0],
+                                            [0.0, 0.0, 1e-1]],
                                            [[0.0, 0.0, 0.0],
                                             [0.0, 0.0, 0.0],
                                             [0.0, 0.0, 0.0]],
+                                           [[1e-1, 0.0, 0.0],
+                                            [0.0, 1e-1, 0.0],
+                                            [0.0, 0.0, 1e-1]],
                                            [[0.0, 0.0, 0.0],
                                             [0.0, 0.0, 0.0],
                                             [0.0, 0.0, 0.0]],
+                                           [[1e-1, 0.0, 0.0],
+                                            [0.0, 1e-1, 0.0],
+                                            [0.0, 0.0, 1e-1]],
+                                           [[1e-1, 0.0, 0.0],
+                                            [0.0, 1e-1, 0.0],
+                                            [0.0, 0.0, 1e-1]],
                                            [[0.0, 0.0, 0.0],
                                             [0.0, 0.0, 0.0],
-                                            [0.0, 0.0, 0.0]]]],
+                                            [0.0, 0.0, 0.0]]
+                                           ]],
                                            device=self.device)
             
-            positions_negative = positions - d_positions
-            positions_positive = positions + d_positions
+            positions_negative = positions_pre_constraint - d_positions
+
+
+            positions_negative_input = positions_negative.clone()
+
+            positions_positive = positions_pre_constraint + d_positions
+            positions_positive_input = positions_positive.clone()
             mass_negative = self.mass_matrix - d_mass_matrix
+            print('mass_negative', mass_negative)
+            mass_negative_input = mass_negative.clone()
+
+            mass_scale1_neg = mass_negative_input[:, 1:] @ torch.linalg.pinv(mass_negative_input[:, 1:] + mass_negative_input[:, :-1])
+            mass_scale2_neg = mass_negative_input[:, :-1] @ torch.linalg.pinv(mass_negative_input[:, 1:] + mass_negative_input[:, :-1])
+            mass_scale_neg = torch.cat((mass_scale1_neg, -mass_scale2_neg), dim=1).view(-1, self.n_edge, 3, 3)
+
             mass_positive = self.mass_matrix + d_mass_matrix
+            print('mass_positive',mass_positive)
+            mass_positive_input = mass_positive.clone()
+            mass_scale1_pos = mass_positive_input[:, 1:] @ torch.linalg.pinv(mass_positive_input[:, 1:] + mass_positive_input[:, :-1])
+            mass_scale2_pos = mass_positive_input[:, :-1] @ torch.linalg.pinv(mass_positive_input[:, 1:] + mass_positive_input[:, :-1])
+            mass_scale_pos = torch.cat((mass_scale1_pos, -mass_scale2_pos), dim=1).view(-1, self.n_edge, 3, 3)
 
             positions_ICE_neg, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 self.batch,
-                positions_negative,
+                positions_negative_input,
                 self.batched_m_restEdgeL,  # change to nominal length
-                mass_negative,
+                mass_negative_input,
                 self.clamped_index,
                 self.inext_scale,
-                self.mass_scale,
+                mass_scale_neg,
                 self.zero_mask_num,
                 self.b_undeformed_vert,
                 self.bkgrad,
                 self.n_branch
             )
-            print('positions_ICE_neg',positions_ICE_neg)
-            print('positions_negative',positions_negative)
+
+
+
+
 
             delta_positions_ICE_neg = (positions_ICE_neg - positions_negative)
+            print('delta_positions_ICE_neg', delta_positions_ICE_neg)
 
             positions_ICE_pos, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 self.batch,
-                positions_positive,
+                positions_positive_input,
                 self.batched_m_restEdgeL,  # change to nominal length
-                mass_positive,
+                mass_positive_input,
                 self.clamped_index,
                 self.inext_scale,
-                self.mass_scale,
+                mass_scale_pos,
                 self.zero_mask_num,
                 self.b_undeformed_vert,
                 self.bkgrad,
                 self.n_branch
             )
-            print('positions_ICE_pos', positions_ICE_pos)
-            print('positions_positive', positions_positive)
+
 
             delta_positions_ICE_pos = (positions_ICE_pos - positions_positive)
+            print('delta_positions_ICE_pos', delta_positions_ICE_pos)
 
             d_delta_positions_ICE = (delta_positions_ICE_pos - delta_positions_ICE_neg) / 2
 
             d_mass_matrix_block = torch.block_diag(*d_mass_matrix[0]).unsqueeze(0)  # → (1, 12, 12)
             d_positions = d_positions.detach().cpu().numpy()
             d_mass_matrix_block = d_mass_matrix_block.detach().cpu().numpy()
-            analytical_d_delta_positions_ICE = self.bkgrad.grad_DX_X @ d_positions.reshape(1,-1,1) + d_mass_matrix_block @ self.bkgrad.grad_DX_M
+            analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_X, d_positions.reshape(1,-1,1)) + np.sum(np.matmul(d_mass_matrix_block, self.bkgrad.grad_DX_M), axis=-1, keepdims=True))
+            analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0], -1, 3)
             #mass_matrix expand to (1,12,12)diagonally position flatten (1,12,1)
             print('d_delta_positions_ICE', d_delta_positions_ICE)
+            np.set_printoptions(precision=3, suppress=True)
             print('analytical_d_delta_positions_ICE', analytical_d_delta_positions_ICE)
 
             velocities = (positions_ICE - prev_positions) / dt

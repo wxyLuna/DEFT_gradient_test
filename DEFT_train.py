@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader
 import torch.optim as optim
 import numpy as np
 # Importing custom utility functions and classes
-# DEFT_initialization: Initializes mass, MOI, rod orientation, etc. for the BDLO
+# DEFT_initialization: Initializes mass, MOI, rod orientation, etc. fFor the BDLO
 # construct_b_DLOs: Constructs undeformed states for the BDLO
 # clamp_index: Builds the necessary clamp indices for boundary condition enforcement
 # index_init: Initializes certain indexing variables for the model
