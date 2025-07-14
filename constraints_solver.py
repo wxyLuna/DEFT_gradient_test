@@ -275,6 +275,7 @@ class constraints_enforcement(nn.Module):
         # Square of the nominal length for each edge
 
 
+
         nominal_length_square = nominal_length * nominal_length
 
         # grad_per_ICitr = gradient_saver.BackwardGradientIC(current_vertices.size()[1])
@@ -283,11 +284,12 @@ class constraints_enforcement(nn.Module):
 
         # Loop over each edge
         # for i in range(current_vertices.size()[1] - 1):
-        for i in range(current_vertices.size()[1] - 1):
+        for i in range(3):
 
 
             # Extract the 'edge' vector, masked by zero_mask_num
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
+
 
 
 
@@ -350,7 +352,7 @@ class constraints_enforcement(nn.Module):
             DX_1  /= scale[:, i]
             # print('DX_0 properly scaled',DX_0)
             # print('DX_1 properly scaled',DX_1)
-            # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
+            print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
 
 
 

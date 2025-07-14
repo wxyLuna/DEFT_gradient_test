@@ -54,13 +54,35 @@ class Unit_test_sim(nn.Module):
         self.b_undeformed_vert = rest_vert.clone()
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
+        self.d_positions_init = torch.tensor([[[0.0, 0.0, 0.0],
+
+                                 [0e-2, 0e-2, 0e-2],
+
+                                 [2e-3, 0e-2, 1e-3],
+                                 [0e-2, 0e-4, 0e-4],
+
+                                 [0e-3, 0e-3, 0e-3],
+                                 [0e-3, 0e-3, 0e-3],
+                                 [0.0, 0.0, 0.0]]])
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(self.b_undeformed_vert.clone(), self.zero_mask)
         )
         self.batched_m_restEdgeL = self.m_restEdgeL.repeat(self.batch, 1, 1).view(-1, n_edge)
+
+        self.m_restEdgeL_pos, self.m_restRegionL_pos = computeLengths(
+            computeEdges(self.b_undeformed_vert.clone()+self.d_positions_init.clone(), self.zero_mask)
+        )
+        self.batched_m_restEdgeL_pos = self.m_restEdgeL_pos.repeat(self.batch, 1, 1).view(-1, n_edge)
+
+        self.m_restEdgeL_neg, self.m_restRegionL_neg = computeLengths(
+            computeEdges(self.b_undeformed_vert.clone() - self.d_positions_init.clone(), self.zero_mask)
+        )
+        self.batched_m_restEdgeL_neg = self.m_restEdgeL_neg.repeat(self.batch, 1, 1).view(-1, n_edge)
         self.undeformed_vert = nn.Parameter(rest_vert)
         ## for storing the old gradients from inextensibility enforcement
         self.bkgrad = gradient_saver.BackwardGradientIC(self.batch *n_branch, n_vert)
+        self.bkgrad_neg = gradient_saver.BackwardGradientIC(self.batch * n_branch, n_vert)
+        self.bkgrad_pos = gradient_saver.BackwardGradientIC(self.batch * n_branch, n_vert)
 
         self.gravity = nn.Parameter(torch.tensor((0, 0, -9.81), device=device))
         self.dt = 1e-2
@@ -122,6 +144,7 @@ class Unit_test_sim(nn.Module):
                                                                prev_positions, dt)
 
             positions_pre_constraint = positions.clone()
+            b_undeformed_vert_pre_constraint = self.b_undeformed_vert.clone()
 
 
             positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
@@ -137,18 +160,22 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad,
                 self.n_branch
             )
+
+            self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+            self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+            self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
             # print('positions_ICE', positions_ICE)
 
             d_positions = np.array([[[0.0, 0.0, 0.0],
 
-                                         [0e-2, 0e-2, 0e-2],
+                                 [0e-2, 0e-2, 0e-2],
 
-                                         [0e-2, 0e-2, 0e-2],
-                                         [1e-3, 3e-3, 1e-3],
+                                 [0e-2, 0e-2, 0e-2],
+                                 [4e-3, 0e-3, 1e-3],
 
-                                         [4e-3, 5e-3, 1e-3],
-                                         [1e-3, 3e-3, 1e-3],
-                                         [0.0, 0.0, 0.0]]])
+                                 [0e-3, 0e-3, 0e-3],
+                                 [0e-3, 0e-3, 0e-3],
+                                 [0.0, 0.0, 0.0]]])
 
             # d_mass = np.array([[[0.0],
             #                            [0.5e-2],
@@ -159,23 +186,18 @@ class Unit_test_sim(nn.Module):
             #                            [4e-2]]])
             d_mass = np.array([[[0.0],
                                 [0.0],
-                                [0.0],
-                                [0.0],
+                                [3e-3],
+                                [2e-3],
                                 [0.0],
                                 [0.0],
                                 [0.0]]])
+            d_positions_init = self.d_positions_init.detach().cpu().numpy()
 
 
             # print('self.bkgrad.grad_DX_X', self.bkgrad.grad_DX_X)
 
-
-            analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_X, d_positions.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_M, d_mass))
-            analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0],-1, 3)
-
-
-            self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
-            self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
-            self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+            analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_Xinit, d_positions_init.reshape(1, -1, 1))+np.matmul(self.bkgrad.grad_DX_X, d_positions.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_M, d_mass))
+            analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0], -1, 3)
 
             d_positions= torch.from_numpy(d_positions).to(self.device)
             d_mass_matrix = np.eye(3)[None, :, :] * d_mass.squeeze()[:, None, None]
@@ -203,17 +225,23 @@ class Unit_test_sim(nn.Module):
             mass_scale2_pos = mass_positive_input[:, :-1] @ torch.linalg.pinv(mass_positive_input[:, 1:] + mass_positive_input[:, :-1])
             mass_scale_pos = torch.cat((mass_scale1_pos, -mass_scale2_pos), dim=1).view(-1, self.n_edge, 3, 3)
 
+            undeform_vert_positive = b_undeformed_vert_pre_constraint+d_positions_init
+            undeform_vert_positive_input = undeform_vert_positive.clone()
+            undeform_vert_negative = b_undeformed_vert_pre_constraint-d_positions_init
+            undeform_vert_negative_input = undeform_vert_negative.clone()
+
+
             positions_ICE_neg, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 self.batch,
                 positions_negative_input,
-                self.batched_m_restEdgeL,  # change to nominal length
+                self.batched_m_restEdgeL_neg,  # change to nominal length
                 mass_negative_input,
                 self.clamped_index,
                 self.inext_scale,
                 mass_scale_neg,
                 self.zero_mask_num,
-                self.b_undeformed_vert,
-                self.bkgrad,
+                undeform_vert_negative_input,
+                self.bkgrad_neg,
                 self.n_branch
             )
 
@@ -224,14 +252,14 @@ class Unit_test_sim(nn.Module):
             positions_ICE_pos, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 self.batch,
                 positions_positive_input,
-                self.batched_m_restEdgeL,  # change to nominal length
+                self.batched_m_restEdgeL_pos,  # change to nominal length
                 mass_positive_input,
                 self.clamped_index,
                 self.inext_scale,
                 mass_scale_pos,
                 self.zero_mask_num,
-                self.b_undeformed_vert,
-                self.bkgrad,
+                undeform_vert_positive_input,
+                self.bkgrad_pos,
                 self.n_branch
             )
 

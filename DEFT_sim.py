@@ -200,6 +200,7 @@ class DEFT_sim(nn.Module):
 
         self.b_undeformed_vert = b_undeformed_vert.clone()
         # Compute reference lengths of edges and Voronoi region
+
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(b_undeformed_vert.clone(), self.zero_mask)
         )

@@ -102,7 +102,7 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     # Compute lambda_param for each batch
     # lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)  # [batch_size, 1, 1]
-    scale = (4 * Edge_length_init ** 2 / (Edge_length ** 2 + Edge_length_init ** 2) ** 2)
+    scale = (4 * Edge_length ** 2 / (Edge_length ** 2 + Edge_length_init ** 2) ** 2)
     scaled_value = scale[:, np.newaxis]
 
     # Compute gradients for each batch

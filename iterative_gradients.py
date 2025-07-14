@@ -34,11 +34,14 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
 
 
+
     Edge_init = X_1_init - X_0_init  # [batch_size, 3, 1]
     Edge_init=np.expand_dims(Edge_init,axis=-1)
+
     # Compute Edge lengths for each batch
     Edge_length = np.linalg.norm(Edge, axis=1, keepdims=True)  # [batch_size, 1, 1]
     Edge_length_init = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
+
 
     # Compute lambda_param for each batch
     lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)  # [batch_size, 1, 1]
