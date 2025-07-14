@@ -17,10 +17,11 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
+total_time = 5  # Total simulation time in seconds
 time_horizon = 1#20
 epochs = 1
 dt = 1e-2
-n_samples = 1  # Number of trajectories for training/evaluation
+n_samples = 3  # Number of trajectories for training/evaluation
 
 # Initialize simulation
 b_DLO_mass = torch.ones(batch, n_vert, device=device)
@@ -54,8 +55,8 @@ train_dataset = TrainSimpleTrajData(
     undeformed_vert=undeformed_vert,
     gravity=gravity,
     time_horizon=time_horizon,
-    total_time=60,
-    n_samples=32,
+    total_time=total_time,
+    n_samples=n_samples,
     dt=dt,
     device=device
 )
@@ -65,7 +66,7 @@ eval_dataset = EvalSimpleTrajData(
     undeformed_vert=undeformed_vert,
     gravity=gravity * 0.95,
     time_horizon=time_horizon,
-    n_samples=16,
+    n_samples=n_samples-2,
     dt=dt,
     device=device
 )

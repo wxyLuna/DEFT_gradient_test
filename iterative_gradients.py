@@ -30,6 +30,8 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     Edge = X_1 - X_0  # [batch_size, 3, 1]
     Edge = np.expand_dims(Edge,axis=-1)
+    # note rounding error in IC
+
 
 
     Edge_init = X_1_init - X_0_init  # [batch_size, 3, 1]
@@ -40,6 +42,8 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     # Compute lambda_param for each batch
     lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)  # [batch_size, 1, 1]
+    # print('lambda_param',lambda_param)
+
 
     # Compute DX_0 and DX_1 for each batch
     DX_0 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, Edge) * lambda_param  # [batch_size, 3, 1]
