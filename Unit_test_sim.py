@@ -194,7 +194,7 @@ class Unit_test_sim(nn.Module):
 
             analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_Xinit, d_positions_init.reshape(1, -1, 1))+np.matmul(self.bkgrad.grad_DX_X, d_positions.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_M, d_mass))
             analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0], -1, 3)
-            analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0],-1, 3)
+
 
             d_positions= torch.from_numpy(d_positions).to(self.device)
             d_mass_matrix = np.eye(3)[None, :, :] * d_mass.squeeze()[:, None, None]
