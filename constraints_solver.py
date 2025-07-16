@@ -299,7 +299,7 @@ class constraints_enforcement(nn.Module):
             # If all edges are within tolerance, skip
             are_all_close_to_zero = torch.all(torch.abs(l) < self.tolerance)
             if are_all_close_to_zero:
-                print('all edges are within tolerance, skipping inextensibility constraint enforcement')
+                # print('all edges are within tolerance, skipping inextensibility constraint enforcement')
                 continue
 
             # l_cat used for scaling -> shape (batch,) -> repeated

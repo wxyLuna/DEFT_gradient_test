@@ -50,14 +50,22 @@ class Unit_test_sim(nn.Module):
 
         ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
 
+        rdm_scale = 0.09
+        rdm_vec = torch.rand(batch, n_vert, 3, device=device)
+        vec_norms = torch.norm(rdm_vec, dim=-1, keepdim=True)
+        rdm_vec = rdm_vec / vec_norms * rdm_scale
+
+        rest_vert = rest_vert + rdm_vec
+
+
         rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
         self.b_undeformed_vert = rest_vert.clone()
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
         self.d_positions_init = torch.tensor([[[0.0, 0.0, 0.0],
                                                [0.0, 0.0, 0.0],
-                                               [1.0, 0.0, 5.0],
-                                               [0.0, 6.0, 2.0],
+                                               [0.0, 0.0, 0.0],
+                                               [0.0, 0.0, 0.0],
                                                [0.0, 0.0, 0.0],
                                                [0.0, 0.0, 0.0],
                                                [0.0, 0.0, 0.0]]]) * 1e-6
@@ -137,7 +145,7 @@ class Unit_test_sim(nn.Module):
             # ___Define the perturbance for analytical & numerical gradient calculation___
             d_positions = np.array([[[0.0, 0.0, 0.0],
                                      [0.0, 0.0, 0.0],
-                                     [1.0, 2.0, 3.0],  # correct direction, wrong scale in all axis
+                                     [0.0, 0.0, 0.0],  # correct direction, wrong scale in all axis
                                      [0.0, 0.0, 0.0],
                                      [0.0, 0.0, 0.0],
                                      [0.0, 0.0, 0.0],
@@ -145,9 +153,9 @@ class Unit_test_sim(nn.Module):
 
             d_mass = np.array([[[0.0],
                                 [0.0],
-                                [3.0],
-                                [1.0],
                                 [2.0],
+                                [3.0],
+                                [5.0],
                                 [0.0],
                                 [0.0]]]) * 1e-4
 
@@ -246,9 +254,26 @@ class Unit_test_sim(nn.Module):
 
             print("------------------------------")
             print("time step", t)
-            # print('numerical', d_delta_positions_ICE_np)
-            # print('analytical', analytical_d_delta_positions_ICE)
-            print('multiple in iter_Sim', analytical_d_delta_positions_ICE[0] * 1 / d_delta_positions_ICE_np[0])
+            print('numerical')
+            print( np.vectorize(lambda x: f"{x:.3e}")(d_delta_positions_ICE_np))
+            print('analytical')
+            print(np.vectorize(lambda x: f"{x:.3e}")(analytical_d_delta_positions_ICE))
+            ratio = analytical_d_delta_positions_ICE[0] * 1 / d_delta_positions_ICE_np[0]
+            relative_error= np.abs((analytical_d_delta_positions_ICE - d_delta_positions_ICE_np) / d_delta_positions_ICE_np)
+            absolute_error= np.abs(analytical_d_delta_positions_ICE - d_delta_positions_ICE_np)
+            formatted_ratio = np.vectorize(lambda x: f"{x:.3e}")(ratio)
+            formatted_relative = np.vectorize(lambda x: f"{x:.3e}")(relative_error)
+            formatted_absolute = np.vectorize(lambda x: f"{x:.3e}")(absolute_error)
+            print('Formated ratio')
+            print( formatted_ratio)
+
+
+
+            print("Formatted Relative Error:")
+            print(formatted_relative)
+
+            print("\nFormatted Absolute Error:")
+            print(formatted_absolute)
             print("------------------------------")
 
             # ___Continue with the simulation using the enforced positions___
