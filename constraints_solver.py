@@ -283,8 +283,8 @@ class constraints_enforcement(nn.Module):
         undeformed_vertices = undeformed_vertices.repeat(batch, 1, 1)
 
         # Loop over each edge
-        # for i in range(current_vertices.size()[1] - 1):
-        for i in range(3):
+        for i in range(current_vertices.size()[1] - 1):
+        # for i in range(3):
 
 
             # Extract the 'edge' vector, masked by zero_mask_num
@@ -352,7 +352,7 @@ class constraints_enforcement(nn.Module):
             DX_1  /= scale[:, i]
             # print('DX_0 properly scaled',DX_0)
             # print('DX_1 properly scaled',DX_1)
-            print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
+            # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
 
 
 

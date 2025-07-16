@@ -849,7 +849,7 @@ class DEFT_sim(nn.Module):
             A PyTorch loss function, e.g. MSELoss.
         dt: float
             Timestep size.
-        parent_theta_clamp / child1_theta_clamp / child2_theta_clamp:
+        parent_theta_clamp / child1_theta_clamp / child2_theta_clamp:constraint_loop
             Indices for controlling which twist angles are clamped in parent/child branches.
         inference_1_batch: bool
             If True, uses the numba-based single-batch approach for constraints.
