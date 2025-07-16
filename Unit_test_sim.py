@@ -123,6 +123,7 @@ class Unit_test_sim(nn.Module):
         traj_loss_eval = 0.0
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
+        constraint_loop = 1
 
         self.bkgrad.reset(self.batch, self.n_vert)
 
@@ -191,24 +192,25 @@ class Unit_test_sim(nn.Module):
 
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                prev_positions, dt)
+            for _ in range(constraint_loop):
 
-            positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-                self.batch,
-                positions,
-                self.batched_m_restEdgeL, ## change to nominal length
-                self.mass_matrix,
-                self.clamped_index,
-                self.inext_scale,
-                self.mass_scale,
-                self.zero_mask_num,
-                self.b_undeformed_vert,
-                self.bkgrad,
-                self.n_branch
-            )
+                positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    self.batch,
+                    positions,
+                    self.batched_m_restEdgeL, ## change to nominal length
+                    self.mass_matrix,
+                    self.clamped_index,
+                    self.inext_scale,
+                    self.mass_scale,
+                    self.zero_mask_num,
+                    self.b_undeformed_vert,
+                    self.bkgrad,
+                    self.n_branch
+                )
 
-            self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
-            self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
-            self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+                self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+                self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+                self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
             # print('positions_ICE', positions_ICE)
 
@@ -226,21 +228,33 @@ class Unit_test_sim(nn.Module):
             positions_old = positions_ICE.clone()
 
         # print('self.bkgrad.grad_DX_X', self.bkgrad.grad_DX_X)
+        d_positions_np = d_positions.detach().cpu().numpy()
 
-        analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_Xinit, d_positions_init.reshape(1, -1, 1))+np.matmul(self.bkgrad.grad_DX_X, d_positions.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_M, d_mass))
+        analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_Xinit, d_positions_init.reshape(1, -1, 1))+np.matmul(self.bkgrad.grad_DX_X, d_positions_np.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_M, d_mass))
         analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0], -1, 3)
         analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0],-1, 3)
 
         # ___Numerical negative perturbation___
-        positions_ICE_neg = self._ICE_iteration(time_horizon, total_force, dt,
-                                                positions_negative_input, previous_positions_traj, self.batched_m_restEdgeL_neg,
-                                                mass_negative_input, mass_scale_neg, undeform_vert_negative_input, self.bkgrad_neg)
+        # positions_ICE_neg = self._ICE_iteration(time_horizon, total_force, dt,
+        #                                         positions_negative_input, previous_positions_traj, self.batched_m_restEdgeL_neg,
+        #                                         mass_negative_input, mass_scale_neg, undeform_vert_negative_input, self.bkgrad_neg)
+        # delta_positions_ICE_neg = positions_ICE_neg - positions_negative
+        #
+        # # ___Numerical positive perturbation___
+        # positions_ICE_pos = self._ICE_iteration(time_horizon, total_force, dt,
+        #                                         positions_positive_input, previous_positions_traj, self.batched_m_restEdgeL_pos,
+        #                                         mass_positive_input, mass_scale_pos, undeform_vert_positive_input, self.bkgrad_pos)
+        # delta_positions_ICE_pos = positions_ICE_pos - positions_positive
+        positions_ICE_neg = self.constraint_loop_iteration( constraint_loop, self.batch, positions_negative_input, self.batched_m_restEdgeL_neg, mass_negative_input, self.inext_scale, self.clamped_index,
+                            mass_scale_neg, self.zero_mask_num, undeform_vert_negative_input, self.bkgrad_neg, self.n_branch)
         delta_positions_ICE_neg = positions_ICE_neg - positions_negative
 
         # ___Numerical positive perturbation___
-        positions_ICE_pos = self._ICE_iteration(time_horizon, total_force, dt,
-                                                positions_positive_input, previous_positions_traj, self.batched_m_restEdgeL_pos,
-                                                mass_positive_input, mass_scale_pos, undeform_vert_positive_input, self.bkgrad_pos)
+        positions_ICE_pos = self.constraint_loop_iteration(constraint_loop, self.batch, positions_positive_input,
+                                                self.batched_m_restEdgeL_pos, mass_positive_input, self.inext_scale,
+                                                self.clamped_index,
+                                                mass_scale_pos, self.zero_mask_num, undeform_vert_positive_input,
+                                                self.bkgrad_pos, self.n_branch)
         delta_positions_ICE_pos = positions_ICE_pos - positions_positive
 
         # ___Calculate numerical gradient by finite difference method___
@@ -289,5 +303,29 @@ class Unit_test_sim(nn.Module):
 
             # positions_traj[:, t] = positions.detach()
             positions_old = positions_ICE.clone()
+
+        return positions_ICE
+
+    def constraint_loop_iteration(self, constraint_loop, batch, positions, nominal_length, mass_matrix, inext_scale, clamped_index,
+                            mass_scale, zero_mask_num, b_undeformed_vert, bkgrad, n_branch):
+        '''Iterative simulation loop for constraint satisfaction.'''
+
+        for _ in range(constraint_loop):
+            positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                batch,
+                positions,
+                nominal_length,  ## change to nominal length
+                mass_matrix,
+                clamped_index,
+                inext_scale,
+                mass_scale,
+                zero_mask_num,
+                b_undeformed_vert,
+                bkgrad,
+                n_branch
+            )
+            bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+            bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+            bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
         return positions_ICE
