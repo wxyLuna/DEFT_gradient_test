@@ -55,12 +55,12 @@ class Unit_test_sim(nn.Module):
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
         self.d_positions_init = torch.tensor([[[0.0, 0.0, 0.0],
-                                               [0e-2, 0e-2, 0e-2],
-                                               [0e-3, 0e-2, 0e-3],
-                                               [0e-2, 0e-4, 0e-4],
-                                               [0e-3, 0e-3, 0e-3],
-                                               [0e-3, 0e-3, 0e-3],
-                                               [0.0, 0.0, 0.0]]])
+                                               [0.0, 0.0, 0.0],
+                                               [1.0, 0.0, 5.0],
+                                               [0.0, 6.0, 2.0],
+                                               [0.0, 0.0, 0.0],
+                                               [0.0, 0.0, 0.0],
+                                               [0.0, 0.0, 0.0]]]) * 1e-6
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(self.b_undeformed_vert.clone(), self.zero_mask)
         )
@@ -117,9 +117,10 @@ class Unit_test_sim(nn.Module):
         total_force = self.External_Force(self.mass_matrix)
         constraint_loop = 20
 
-        self.bkgrad.reset(self.batch, self.n_vert)
-
         for t in range(time_horizon):
+
+            self.bkgrad.reset(self.batch, self.n_vert)
+
             if t == 0:
                 # print('at time step', t)
                 positions = positions_traj[:,t]
@@ -135,20 +136,20 @@ class Unit_test_sim(nn.Module):
 
             # ___Define the perturbance for analytical & numerical gradient calculation___
             d_positions = np.array([[[0.0, 0.0, 0.0],
-                                     [0e-2, 0e-2, 0e-2],
-                                     [0e-3, 0e-6, 0e-3],  # correct direction, wrong scale in all axis
-                                     [0e-2, 0e-2, 0e-6],
-                                     [0e-5, 0e-2, 0e-2],
-                                     [0e-2, 0e-2, 0e-2],
-                                     [0.0, 0.0, 0.0]]])
+                                     [0.0, 0.0, 0.0],
+                                     [1.0, 2.0, 3.0],  # correct direction, wrong scale in all axis
+                                     [0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0]]]) * 1e-6
 
             d_mass = np.array([[[0.0],
-                                [0e-3],
-                                [0e-3],
-                                [0e-3],
                                 [0.0],
+                                [3.0],
+                                [1.0],
+                                [2.0],
                                 [0.0],
-                                [0.0]]])
+                                [0.0]]]) * 1e-4
 
             d_positions_init = self.d_positions_init.detach().cpu().numpy()
             d_positions = torch.from_numpy(d_positions).to(self.device)
@@ -243,9 +244,12 @@ class Unit_test_sim(nn.Module):
             d_delta_positions_ICE = (delta_positions_ICE_pos - delta_positions_ICE_neg) / 2
             d_delta_positions_ICE_np = d_delta_positions_ICE.detach().cpu().numpy()
 
-            print('numerical', d_delta_positions_ICE_np)
-            print('analytical', analytical_d_delta_positions_ICE)
+            print("------------------------------")
+            print("time step", t)
+            # print('numerical', d_delta_positions_ICE_np)
+            # print('analytical', analytical_d_delta_positions_ICE)
             print('multiple in iter_Sim', analytical_d_delta_positions_ICE[0] * 1 / d_delta_positions_ICE_np[0])
+            print("------------------------------")
 
             # ___Continue with the simulation using the enforced positions___
             velocities = (positions_ICE - prev_positions) / dt

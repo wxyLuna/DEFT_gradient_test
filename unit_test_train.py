@@ -17,11 +17,12 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 5  # Total simulation time in seconds
-time_horizon = 1#20
+total_time = 24  # Total simulation time in seconds
+time_horizon = 20#20
 epochs = 1
 dt = 1e-2
 n_samples = 3  # Number of trajectories for training/evaluation
+timer = 0
 
 # Initialize simulation
 b_DLO_mass = torch.ones(batch, n_vert, device=device)
@@ -93,7 +94,10 @@ for epoch in range(epochs):
     # if epoch == 0 and os.path.exists("gravity_only_model.pth"):
     #     sim.load_state_dict(torch.load("gravity_only_model.pth"))
 
+
     for previous_positions_traj, current_positions_traj,target_traj in train_loader:
+        timer += 1
+        print('timer',timer)
 
 
 
