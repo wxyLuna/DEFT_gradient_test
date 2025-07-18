@@ -6,3 +6,5 @@ __pycache__
 *.pkl
 *.json
 *.pyc
+*npy
+error_log/
