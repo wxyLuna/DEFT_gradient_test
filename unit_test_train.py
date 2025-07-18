@@ -105,7 +105,7 @@ for epoch in range(epochs):
 
 
         traj_loss, total_loss = sim.iterative_sim(
-            time_horizon, current_positions_traj, previous_positions_traj, target_traj, loss_func, dt
+            time_horizon, current_positions_traj, previous_positions_traj, target_traj, loss_func, dt, timer
         )
         total_loss.backward(retain_graph=True)
         # print("mass_diagonal grad:", sim.mass_diagonal.grad)
@@ -127,22 +127,22 @@ for epoch in range(epochs):
     # === Evaluation ===
     # Load trained parameters if a checkpoint exists
 
-    sim.eval()
-    with torch.no_grad():
-        total_eval_loss = 0.0
-        eval_positions_traj = undeformed_vert.expand(batch, n_vert, 3).unsqueeze(1).repeat(1, time_horizon, 1, 1)
-
-        for previous_eval_traj, _, eval_traj in eval_loader:
-            eval_positions_traj = torch.zeros_like(eval_traj)
-
-            eval_loss, _ = sim.iterative_sim(
-                time_horizon, eval_positions_traj, previous_eval_traj, eval_traj, loss_func, dt
-            )
-            total_eval_loss += eval_loss.item()
-        avg_eval_loss = total_eval_loss / len(eval_loader)
-        eval_losses.append(avg_eval_loss)
-
-    print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.6f} | Eval Loss: {avg_eval_loss:.6f}")
+    # sim.eval()
+    # with torch.no_grad():
+    #     total_eval_loss = 0.0
+    #     eval_positions_traj = undeformed_vert.expand(batch, n_vert, 3).unsqueeze(1).repeat(1, time_horizon, 1, 1)
+    #
+    #     for previous_eval_traj, _, eval_traj in eval_loader:
+    #         eval_positions_traj = torch.zeros_like(eval_traj)
+    #
+    #         eval_loss, _ = sim.iterative_sim(
+    #             time_horizon, eval_positions_traj, previous_eval_traj, eval_traj, loss_func, dt
+    #         )
+    #         total_eval_loss += eval_loss.item()
+    #     avg_eval_loss = total_eval_loss / len(eval_loader)
+    #     eval_losses.append(avg_eval_loss)
+    #
+    # print(f"Epoch {epoch+1}/{epochs} | Train Loss: {avg_train_loss:.6f} | Eval Loss: {avg_eval_loss:.6f}")
 
 
     # === Save logs ===

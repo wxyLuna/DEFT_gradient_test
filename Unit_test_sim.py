@@ -19,6 +19,8 @@ from util import rotation_matrix, computeW, computeLengths, computeEdges, visual
 import gradient_saver
 import numpy as np
 
+
+
 class Unit_test_sim(nn.Module):
     def __init__(self, batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device):
         super().__init__()
@@ -119,7 +121,53 @@ class Unit_test_sim(nn.Module):
         positions = positions + velocities * dt  # not wrapped in nn.Parameter
         return positions
 
-    def iterative_sim(self, time_horizon, positions_traj, previous_positions_traj,target_traj, loss_func,dt):
+    def save_and_later_average_errors(self,ratio, relative_error, absolute_error, timer, time_step, save_dir="error_logs",
+                                      mode="save"):
+        """
+        Save or load + average error arrays (ratio, relative, absolute) for a given timer and time_step.
+
+        Args:
+            ratio (np.ndarray): The ratio array (batch, n_vert, 3).
+            relative_error (np.ndarray): Relative error array.
+            absolute_error (np.ndarray): Absolute error array.
+            timer (int): Current outer loop counter.
+            time_step (int): Current inner time step.
+            save_dir (str): Directory to save or load data.
+            mode (str): Either "save" to write files or "load" to compute means from saved data.
+        """
+        os.makedirs(save_dir, exist_ok=True)
+
+
+        if mode == "save":
+            # Save each array with unique names
+            np.save(os.path.join(save_dir, f"ratio_timer{timer}_step{time_step}.npy"), ratio)
+            np.save(os.path.join(save_dir, f"relerr_timer{timer}_step{time_step}.npy"), relative_error)
+            np.save(os.path.join(save_dir, f"abserr_timer{timer}_step{time_step}.npy"), absolute_error)
+
+        elif mode == "load":
+            # Load all matching files and compute averaged values
+            ratio_vals, rel_vals, abs_vals = [], [], []
+
+            for filename in os.listdir(save_dir):
+                full_path = os.path.join(save_dir, filename)
+                if filename.startswith("ratio_") and filename.endswith(".npy"):
+                    ratio_vals.append(np.load(full_path))
+                elif filename.startswith("relerr_") and filename.endswith(".npy"):
+                    rel_vals.append(np.load(full_path))
+                elif filename.startswith("abserr_") and filename.endswith(".npy"):
+                    abs_vals.append(np.load(full_path))
+
+            if ratio_vals:
+                avg_ratio = np.mean(np.concatenate(ratio_vals)) / 10
+                print(f"Averaged Ratio / 10: {avg_ratio:.3e}")
+            if rel_vals:
+                avg_rel_error = np.mean(np.concatenate(rel_vals)) / 10
+                print(f"Averaged Relative Error / 10: {avg_rel_error:.3e}")
+            if abs_vals:
+                avg_abs_error = np.mean(np.concatenate(abs_vals)) / 10
+                print(f"Averaged Absolute Error / 10: {avg_abs_error:.3e}")
+
+    def iterative_sim(self, time_horizon, positions_traj, previous_positions_traj,target_traj, loss_func,dt,timer):
         traj_loss_eval = 0.0
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
@@ -145,17 +193,17 @@ class Unit_test_sim(nn.Module):
             # ___Define the perturbance for analytical & numerical gradient calculation___
             d_positions = np.array([[[0.0, 0.0, 0.0],
                                      [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],  # correct direction, wrong scale in all axis
+                                     [1.0, 3.0, 5.0],
+                                     [0.0, 1.0, 0.0],
+                                     [2.0, 4.0, 6.0],
                                      [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0]]]) * 1e-6
+                                     [0.0, 0.0, 0.0]]]) * 1e-8
 
             d_mass = np.array([[[0.0],
                                 [0.0],
-                                [2.0],
-                                [3.0],
-                                [5.0],
+                                [0.0],
+                                [0.0],
+                                [0.0],
                                 [0.0],
                                 [0.0]]]) * 1e-4
 
@@ -274,6 +322,7 @@ class Unit_test_sim(nn.Module):
 
             print("\nFormatted Absolute Error:")
             print(formatted_absolute)
+            self.save_and_later_average_errors(ratio, relative_error, absolute_error, timer, t, save_dir="error_logs",mode="save")
             print("------------------------------")
 
             # ___Continue with the simulation using the enforced positions___
@@ -289,6 +338,7 @@ class Unit_test_sim(nn.Module):
 
             # positions_traj[:, t] = positions.detach()
             positions_old = positions_ICE.clone()
+        # self.save_and_later_average_errors(None, None, None, None, None, mode="load")
 
         return traj_loss_eval, total_loss
 
