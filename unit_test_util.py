@@ -17,9 +17,12 @@ class TrainSimpleTrajData(Dataset):
             full_traj = torch.zeros(total_time, undeformed_vert.shape[0], 3, device=device)
 
         for t in range(total_time):
+            print('total_time', total_time)
             random_gravity = torch.rand(undeformed_vert.shape[0], 3) * torch.tensor([[1, 1, 1]])  # shape (4, 3)
             random_gravity = F.normalize(random_gravity, dim=0) * 9.81
+            print("random_gravity", random_gravity)
             full_traj[t] = undeformed_vert[0] + 0.5 * random_gravity * (t * dt) ** 2
+            print("full_traj", full_traj[t])
 
             # generate sliding window segments
             for i in range(total_time - 2 - time_horizon):

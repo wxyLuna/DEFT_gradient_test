@@ -18,6 +18,7 @@ from constraints_solver import constraints_enforcement
 from util import rotation_matrix, computeW, computeLengths, computeEdges, visualize_tensors_3d_in_same_plot_no_zeros
 import gradient_saver
 import numpy as np
+from scipy.optimize import check_grad
 
 
 
@@ -197,7 +198,7 @@ class Unit_test_sim(nn.Module):
                                      [0.0, 1.0, 0.0],
                                      [2.0, 4.0, 6.0],
                                      [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0]]]) * 1e-8
+                                     [0.0, 0.0, 0.0]]]) * 1e-6
 
             d_mass = np.array([[[0.0],
                                 [0.0],
@@ -206,6 +207,7 @@ class Unit_test_sim(nn.Module):
                                 [0.0],
                                 [0.0],
                                 [0.0]]]) * 1e-4
+
 
             d_positions_init = self.d_positions_init.detach().cpu().numpy()
             d_positions = torch.from_numpy(d_positions).to(self.device)
@@ -244,6 +246,8 @@ class Unit_test_sim(nn.Module):
 
             undeform_vert_positive = b_undeformed_vert_pre_constraint + d_positions_init
             undeform_vert_positive_input = undeform_vert_positive.clone()
+
+
 
             # ___Analytical gradient & Center values for inextensibility constraint enforcement___
             for _ in range(constraint_loop):
@@ -322,7 +326,7 @@ class Unit_test_sim(nn.Module):
 
             print("\nFormatted Absolute Error:")
             print(formatted_absolute)
-            self.save_and_later_average_errors(ratio, relative_error, absolute_error, timer, t, save_dir="error_logs",mode="save")
+            # self.save_and_later_average_errors(ratio, relative_error, absolute_error, timer, t, save_dir="error_logs",mode="save")
             print("------------------------------")
 
             # ___Continue with the simulation using the enforced positions___

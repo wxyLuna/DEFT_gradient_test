@@ -10,6 +10,8 @@ from Unit_test_sim import Unit_test_sim  # Your custom simulation class
 from unit_test_util import TrainSimpleTrajData, EvalSimpleTrajData
 import os
 
+import time
+
 # Hyperparameters
 batch = 1
 n_vert = 7
@@ -24,10 +26,13 @@ dt = 1e-2
 n_samples = 3  # Number of trajectories for training/evaluation
 timer = 0
 
+torch.manual_seed(int(time.time()))
+
 # Initialize simulation
 # b_DLO_mass = torch.ones(batch, n_vert, device=device)
 # b_DLO_mass = torch.tensor([1.0, 1.1, 1.2, 1.1, 1.0, 0.9, 1.0], device=device).repeat(batch, 1)
 rdm_mass = torch.rand(batch, n_vert, device=device) * 0.4 + 0.8
+
 b_DLO_mass = rdm_mass
 sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
 
