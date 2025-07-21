@@ -19,6 +19,7 @@ from util import rotation_matrix, computeW, computeLengths, computeEdges, visual
 import gradient_saver
 import numpy as np
 from scipy.optimize import check_grad
+import re
 
 
 
@@ -67,9 +68,9 @@ class Unit_test_sim(nn.Module):
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
         self.d_positions_init = torch.tensor([[[0.0, 0.0, 0.0],
                                                [0.0, 0.0, 0.0],
-                                               [0.0, 0.0, 0.0],
-                                               [0.0, 0.0, 0.0],
-                                               [0.0, 0.0, 0.0],
+                                               [1.0, 3.0, 5.0],
+                                               [0.0, 1.0, 4.0],
+                                               [2.0, 4.0, 6.0],
                                                [0.0, 0.0, 0.0],
                                                [0.0, 0.0, 0.0]]]) * 1e-6
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
@@ -122,6 +123,7 @@ class Unit_test_sim(nn.Module):
         positions = positions + velocities * dt  # not wrapped in nn.Parameter
         return positions
 
+
     def save_and_later_average_errors(self,ratio, relative_error, absolute_error, timer, time_step, save_dir="error_logs",
                                       mode="save"):
         """
@@ -138,12 +140,23 @@ class Unit_test_sim(nn.Module):
         """
         os.makedirs(save_dir, exist_ok=True)
 
+        def find_next_log_index():
+            existing = [d for d in os.listdir(save_dir) if re.match(r"^error_log\d+$", d)]
+            indices = [int(d.replace("error_log", "")) for d in existing]
+            return max(indices) + 1 if indices else 1
+
+        if not hasattr(self, "current_error_log_dir"):
+            log_id = find_next_log_index()
+            self.current_error_log_dir = os.path.join(save_dir, f"error_log{log_id}")
+            os.makedirs(self.current_error_log_dir, exist_ok=True)
+            print(f"[INFO] Writing to new log folder: {self.current_error_log_dir}")
+
 
         if mode == "save":
             # Save each array with unique names
-            np.save(os.path.join(save_dir, f"ratio_timer{timer}_step{time_step}.npy"), ratio)
-            np.save(os.path.join(save_dir, f"relerr_timer{timer}_step{time_step}.npy"), relative_error)
-            np.save(os.path.join(save_dir, f"abserr_timer{timer}_step{time_step}.npy"), absolute_error)
+            np.save(os.path.join(self.current_error_log_dir, f"ratio_timer{timer}_step{time_step}.npy"), ratio)
+            np.save(os.path.join(self.current_error_log_dir, f"relerr_timer{timer}_step{time_step}.npy"), relative_error)
+            np.save(os.path.join(self.current_error_log_dir, f"abserr_timer{timer}_step{time_step}.npy"), absolute_error)
 
         elif mode == "load":
             # Load all matching files and compute averaged values
@@ -194,11 +207,11 @@ class Unit_test_sim(nn.Module):
             # ___Define the perturbance for analytical & numerical gradient calculation___
             d_positions = np.array([[[0.0, 0.0, 0.0],
                                      [0.0, 0.0, 0.0],
-                                     [1.0, 3.0, 5.0],
-                                     [0.0, 1.0, 0.0],
-                                     [2.0, 4.0, 6.0],
                                      [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0]]]) * 1e-6
+                                     [0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0],
+                                     [0.0, 0.0, 0.0]]]) * 1e-8
 
             d_mass = np.array([[[0.0],
                                 [0.0],
@@ -342,7 +355,33 @@ class Unit_test_sim(nn.Module):
 
             # positions_traj[:, t] = positions.detach()
             positions_old = positions_ICE.clone()
-        # self.save_and_later_average_errors(None, None, None, None, None, mode="load")
+
+            #plotting
+            vis_batch = self.batch
+            for i_eval_batch in range(vis_batch):
+                wire_prediction = positions_ICE[i_eval_batch].detach().cpu().numpy()
+                gt_traj = target_traj[i_eval_batch, t].detach().cpu().numpy()
+                visualize_tensors_3d_in_same_plot_no_zeros(
+                    self.clamped_index,
+                    wire_prediction,
+                    None,
+                    t,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    gt_traj,
+                    None,
+                    None,
+                    i_eval_batch,
+                    'single_branch_wire'
+
+
+                )
+
 
         return traj_loss_eval, total_loss
 

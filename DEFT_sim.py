@@ -949,6 +949,7 @@ class DEFT_sim(nn.Module):
                     parent_rod_axis_angle
                 ).unsqueeze(dim=0).repeat(self.batch, self.n_vert - 1, 1)
 
+
                 child_rod_axis_angle = torch.zeros(1, 3)
                 children_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
                     child_rod_axis_angle
