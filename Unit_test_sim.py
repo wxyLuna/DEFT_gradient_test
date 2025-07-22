@@ -187,7 +187,7 @@ class Unit_test_sim(nn.Module):
         total_force = self.External_Force(self.mass_matrix)
         constraint_loop = 20
 
-        for t in range(time_horizon):
+        for t in range(int(time_horizon)):
 
             self.bkgrad.reset(self.batch, self.n_vert)
 
@@ -356,31 +356,7 @@ class Unit_test_sim(nn.Module):
             # positions_traj[:, t] = positions.detach()
             positions_old = positions_ICE.clone()
 
-            #plotting
-            vis_batch = self.batch
-            for i_eval_batch in range(vis_batch):
-                wire_prediction = positions_ICE[i_eval_batch].detach().cpu().numpy()
-                gt_traj = target_traj[i_eval_batch, t].detach().cpu().numpy()
-                visualize_tensors_3d_in_same_plot_no_zeros(
-                    self.clamped_index,
-                    wire_prediction,
-                    None,
-                    t,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    gt_traj,
-                    None,
-                    None,
-                    i_eval_batch,
-                    'single_branch_wire'
 
-
-                )
 
 
         return traj_loss_eval, total_loss
@@ -408,3 +384,45 @@ class Unit_test_sim(nn.Module):
             bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
         return positions_ICE
+
+    def generate_preX_trajectory(self, time_horizon, dt):
+        # Initialize tensors
+        b_DLOs_vertices_traj = torch.zeros(time_horizon, self.batch * self.n_branch, self.n_vert, 3)
+
+        # Initial positions and velocities
+        positions_t = self.undeformed_vert.clone().detach()  # shape: [batch, n_vert, 3]
+        velocities_t = torch.zeros_like(positions_t)
+
+        for t in range(time_horizon):
+            # Step 1–5 in Algorithm 1:
+            total_force = self.External_Force(self.mass_matrix)  # Apply gravity
+            acc = torch.linalg.solve(self.mass_matrix, total_force.unsqueeze(-1)).squeeze(-1)
+            velocities_t = velocities_t + acc * dt  # V̂_{t+1}
+            positions_t1 = positions_t + velocities_t * dt  # X̂_{t+1}
+
+            # Enforce inextensibility constraint (Step 4)
+            for _ in range(20):  # constraint_loop
+                positions_t1, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    self.batch,
+                    positions_t1,
+                    self.batched_m_restEdgeL,
+                    self.mass_matrix,
+                    self.clamped_index,
+                    self.inext_scale,
+                    self.mass_scale,
+                    self.zero_mask_num,
+                    self.undeformed_vert,
+                    self.bkgrad,
+                    self.n_branch
+                )
+
+            # Update velocity after constraint enforcement
+            velocities_t = (positions_t1 - positions_t) / dt
+
+            # Save trajectory
+            b_DLOs_vertices_traj[t] = positions_t1.detach().cpu()
+
+            # Prepare for next step
+            positions_t = positions_t1.clone()
+
+        return b_DLOs_vertices_traj  # shape: [time_horizon, batch * n_branch, n_vert, 3]

@@ -19,11 +19,12 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 8  # Total simulation time in seconds
-time_horizon = 5#20
+total_time = 6  # Total simulation time in seconds
+time_horizon = total_time-3
+eval_time_horizon = total_time - 2
 epochs = 1
 dt = 1e-2
-n_samples = 3  # Number of trajectories for training/evaluation
+n_samples = 1  # Number of trajectories for training/evaluation
 timer = 0
 experiment_runs = 1
 torch.manual_seed(int(time.time()))
@@ -64,7 +65,7 @@ for run_id in range(experiment_runs):
     undeformed_vert = undeformed[0]
 
     train_target_traj = torch.zeros(n_samples, time_horizon, n_vert, 3, device=device)
-    eval_target_traj = torch.zeros(n_samples, time_horizon, n_vert, 3, device=device)
+    eval_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     train_dataset = TrainSimpleTrajData(
         undeformed_vert=undeformed_vert,
         gravity=gravity,
@@ -72,7 +73,8 @@ for run_id in range(experiment_runs):
         total_time=total_time,
         n_samples=n_samples,
         dt=dt,
-        device=device
+        device=device,
+        sim=sim
     )
     train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
 
