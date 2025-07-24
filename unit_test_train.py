@@ -19,7 +19,7 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 6  # Total simulation time in seconds
+total_time = 100 # Total simulation time in seconds
 time_horizon = total_time-3
 eval_time_horizon = total_time - 2
 epochs = 1
@@ -28,6 +28,7 @@ n_samples = 1  # Number of trajectories for training/evaluation
 timer = 0
 experiment_runs = 1
 torch.manual_seed(int(time.time()))
+parent_clamped_selection = torch.tensor((0, 1, -2, -1))
 
 # Initialize simulation
 # b_DLO_mass = torch.ones(batch, n_vert, device=device)
@@ -68,6 +69,7 @@ for run_id in range(experiment_runs):
     eval_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     train_dataset = TrainSimpleTrajData(
         undeformed_vert=undeformed_vert,
+        clamp_selection=parent_clamped_selection,
         gravity=gravity,
         time_horizon=time_horizon,
         total_time=total_time,

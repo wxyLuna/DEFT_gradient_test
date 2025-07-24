@@ -21,7 +21,7 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
     X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
-    X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
+    X_0_init, X_1_init = X_0_init.detach().cpu().numpy(), X_1_init.detach().cpu().numpy()
     batch_size = M_0.shape[0]
 
     # Compute M_param for each batch
@@ -87,6 +87,7 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     batch_size = M_0.shape[0]
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
     X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+    X_0_init, X_1_init = X_0_init.detach().cpu().numpy(), X_1_init.detach().cpu().numpy()
 
 
     # Compute M_param for each batch
@@ -140,7 +141,7 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     batch_size = M_0.shape[0]
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
     X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
-    X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
+    X_0_init, X_1_init = X_0_init.detach().cpu().numpy(), X_1_init.detach().cpu().numpy()
 
     # Compute M_param for each batch
     M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]

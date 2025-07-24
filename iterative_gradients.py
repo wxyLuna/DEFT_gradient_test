@@ -20,7 +20,7 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     batch_size = M_0.shape[0]
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
     X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
-    X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
+    X_0_init, X_1_init = X_0_init.detach().cpu().numpy(), X_1_init.detach().cpu().numpy()
 
 
     # Compute M_param for each batch

@@ -12,7 +12,7 @@ import os
 
 
 class TrainSimpleTrajData(Dataset):
-    def __init__(self, undeformed_vert, gravity, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
+    def __init__(self, undeformed_vert,clamp_selection, gravity, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
         super().__init__()
         # sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
         self.device = device
@@ -32,23 +32,31 @@ class TrainSimpleTrajData(Dataset):
                 prev = full_traj[i: i + time_horizon]
                 curr = full_traj[i + 1: i + 1 + time_horizon]
                 targ = full_traj[i + 2: i + 2 + time_horizon]
+                # Apply clamp selection
+
+                clamp_selection = clamp_selection % undeformed_vert.shape[0]
+                for v in clamp_selection:
+                    prev[:, :, v, :] = undeformed_vert[v, :].clone()
+                    curr[:, :, v, :] = undeformed_vert[v, :].clone()
+                    targ[:, :, v, :] = undeformed_vert[v, :].clone()
 
                 self.prev_traj.append(prev)
                 self.curr_traj.append(curr)
                 self.targ_traj.append(targ)
-                self.save_trajectory_with_undeformed(
-                        curr.unsqueeze(0),  # shape [T, B=1, V, 3]
-                        self.undeformed_vert,
-                        idx=self.global_idx,
-                        save_dir="trajectory_plots",
-                        title=f"Auto-Saved Trajectory Sample{self.global_idx}"
-                    )
+
 
                 self.global_idx += 1
 
         self.prev_traj = torch.stack(self.prev_traj)
         self.curr_traj = torch.stack(self.curr_traj)
         self.targ_traj = torch.stack(self.targ_traj)
+        self.save_trajectory_with_undeformed(
+            self.curr_traj.squeeze(0),  # shape [T, B=1, V, 3]
+            self.undeformed_vert,
+            idx=self.global_idx,
+            save_dir="trajectory_plots",
+            title=f"Auto-Saved Trajectory Sample{self.global_idx}"
+        )
 
 
 
@@ -96,7 +104,7 @@ class TrainSimpleTrajData(Dataset):
             for ax in [ax1, ax2]:
                 # Plot time-varying trajectory
                 for t in range(T):
-                    color_strength = t / T
+                    color_strength = 1
                     points = verts[t].numpy()
                     ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=color_strength,
                             label=f"t={t}" if t == 0 else "")
@@ -117,7 +125,7 @@ class TrainSimpleTrajData(Dataset):
                 ax.set_zlabel("Z")
                 ax.set_xlim([-0.5, 1.0])
                 ax.set_ylim([-0.5, 1.0])
-                ax.set_zlim([-0.25, 1.25])
+                ax.set_zlim([-0.5, 0.5])
                 ax.legend()
 
             ax1.view_init(elev=0, azim=90)

@@ -54,12 +54,7 @@ class Unit_test_sim(nn.Module):
 
         ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
 
-        rdm_scale = 0.09
-        rdm_vec = torch.rand(batch, n_vert, 3, device=device)
-        vec_norms = torch.norm(rdm_vec, dim=-1, keepdim=True)
-        rdm_vec = rdm_vec / vec_norms * rdm_scale
 
-        rest_vert = rest_vert + rdm_vec
 
 
         rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
@@ -107,10 +102,12 @@ class Unit_test_sim(nn.Module):
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
-        self.clamped_index = torch.tensor([[1.0, 1.0,0,0,0, 1.0, 1.0]]) # hardcoded clamped index for the first vertex
+        self.clamped_index = torch.tensor([[1.0, 0.0,0,0,0, 1.0, 1.0]]) # hardcoded clamped index for the first vertex
         self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
         self.n_branch=n_branch
         # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
+        self.parent_clamped_selection = torch.tensor((0, 1, -2, -1))
+
 
 
     def External_Force(self, mass_matrix
@@ -186,6 +183,14 @@ class Unit_test_sim(nn.Module):
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
         constraint_loop = 20
+        # Enforce clamp constraints
+
+        # parent_fix_point = self.undeformed_vert[:, :, 0, self.parent_clamped_selection]
+        # positions_traj[:, :, 0, self.parent_clamped_selection] = parent_fix_point
+        # previous_positions_traj[:, :, 0, self.parent_clamped_selection] = parent_fix_point
+        # target_traj[:, :, 0, self.parent_clamped_selection] = parent_fix_point
+
+
 
         for t in range(int(time_horizon)):
 
@@ -203,62 +208,6 @@ class Unit_test_sim(nn.Module):
 
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                prev_positions, dt)
-
-            # ___Define the perturbance for analytical & numerical gradient calculation___
-            d_positions = np.array([[[0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0],
-                                     [0.0, 0.0, 0.0]]]) * 1e-8
-
-            d_mass = np.array([[[0.0],
-                                [0.0],
-                                [0.0],
-                                [0.0],
-                                [0.0],
-                                [0.0],
-                                [0.0]]]) * 1e-4
-
-
-            d_positions_init = self.d_positions_init.detach().cpu().numpy()
-            d_positions = torch.from_numpy(d_positions).to(self.device)
-            d_mass_matrix = np.eye(3)[None, :, :] * d_mass.squeeze()[:, None, None]
-            d_mass_matrix = torch.from_numpy(d_mass_matrix).to(self.device)
-
-            positions_pre_constraint = positions.clone()
-            b_undeformed_vert_pre_constraint = self.b_undeformed_vert.clone()
-
-            # ___Numerical negative perturbation___
-            positions_negative = positions_pre_constraint - d_positions
-            positions_negative_input = positions_negative.clone()
-
-            mass_negative = self.mass_matrix - d_mass_matrix
-            mass_negative_input = mass_negative.clone()
-            mass_scale1_neg = mass_negative_input[:, 1:] @ torch.linalg.pinv(
-                mass_negative_input[:, 1:] + mass_negative_input[:, :-1])
-            mass_scale2_neg = mass_negative_input[:, :-1] @ torch.linalg.pinv(
-                mass_negative_input[:, 1:] + mass_negative_input[:, :-1])
-            mass_scale_neg = torch.cat((mass_scale1_neg, -mass_scale2_neg), dim=1).view(-1, self.n_edge, 3, 3)
-
-            undeform_vert_negative = b_undeformed_vert_pre_constraint - d_positions_init
-            undeform_vert_negative_input = undeform_vert_negative.clone()
-
-            # ___Numerical positive perturbation___
-            positions_positive = positions_pre_constraint + d_positions
-            positions_positive_input = positions_positive.clone()
-
-            mass_positive = self.mass_matrix + d_mass_matrix
-            mass_positive_input = mass_positive.clone()
-            mass_scale1_pos = mass_positive_input[:, 1:] @ torch.linalg.pinv(
-                mass_positive_input[:, 1:] + mass_positive_input[:, :-1])
-            mass_scale2_pos = mass_positive_input[:, :-1] @ torch.linalg.pinv(
-                mass_positive_input[:, 1:] + mass_positive_input[:, :-1])
-            mass_scale_pos = torch.cat((mass_scale1_pos, -mass_scale2_pos), dim=1).view(-1, self.n_edge, 3, 3)
-
-            undeform_vert_positive = b_undeformed_vert_pre_constraint + d_positions_init
-            undeform_vert_positive_input = undeform_vert_positive.clone()
 
 
 
@@ -286,61 +235,6 @@ class Unit_test_sim(nn.Module):
             # print('self.bkgrad.grad_DX_X', self.bkgrad.grad_DX_X)
 
             # ___Analytical perturbation___
-            d_positions_np = d_positions.detach().cpu().numpy()
-
-            analytical_d_delta_positions_ICE = (np.matmul(self.bkgrad.grad_DX_Xinit, d_positions_init.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_X, d_positions_np.reshape(1, -1, 1)) + np.matmul(self.bkgrad.grad_DX_M, d_mass))
-            analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0], -1, 3)
-            analytical_d_delta_positions_ICE = analytical_d_delta_positions_ICE.reshape(self.bkgrad.grad_DX_X.shape[0], -1, 3)
-
-            # ___Numerical negative perturbation___
-            positions_ICE_neg = self.constraint_loop_iteration(constraint_loop, self.batch,
-                                                               positions_negative_input,
-                                                               self.batched_m_restEdgeL_neg, mass_negative_input,
-                                                               self.inext_scale, self.clamped_index,
-                                                               mass_scale_neg, self.zero_mask_num,
-                                                               undeform_vert_negative_input, self.bkgrad_neg,
-                                                               self.n_branch)
-            delta_positions_ICE_neg = positions_ICE_neg - positions_negative
-
-            # ___Numerical positive perturbation___
-            positions_ICE_pos = self.constraint_loop_iteration(constraint_loop, self.batch,
-                                                               positions_positive_input,
-                                                               self.batched_m_restEdgeL_pos, mass_positive_input,
-                                                               self.inext_scale,
-                                                               self.clamped_index,
-                                                               mass_scale_pos, self.zero_mask_num,
-                                                               undeform_vert_positive_input,
-                                                               self.bkgrad_pos, self.n_branch)
-            delta_positions_ICE_pos = positions_ICE_pos - positions_positive
-
-            # ___Calculate numerical gradient by finite difference method___
-            d_delta_positions_ICE = (delta_positions_ICE_pos - delta_positions_ICE_neg) / 2
-            d_delta_positions_ICE_np = d_delta_positions_ICE.detach().cpu().numpy()
-
-            print("------------------------------")
-            print("time step", t)
-            print('numerical')
-            print( np.vectorize(lambda x: f"{x:.3e}")(d_delta_positions_ICE_np))
-            print('analytical')
-            print(np.vectorize(lambda x: f"{x:.3e}")(analytical_d_delta_positions_ICE))
-            ratio = analytical_d_delta_positions_ICE[0] * 1 / d_delta_positions_ICE_np[0]
-            relative_error= np.abs((analytical_d_delta_positions_ICE - d_delta_positions_ICE_np) / d_delta_positions_ICE_np)
-            absolute_error= np.abs(analytical_d_delta_positions_ICE - d_delta_positions_ICE_np)
-            formatted_ratio = np.vectorize(lambda x: f"{x:.3e}")(ratio)
-            formatted_relative = np.vectorize(lambda x: f"{x:.3e}")(relative_error)
-            formatted_absolute = np.vectorize(lambda x: f"{x:.3e}")(absolute_error)
-            print('Formated ratio')
-            print( formatted_ratio)
-
-
-
-            print("Formatted Relative Error:")
-            print(formatted_relative)
-
-            print("\nFormatted Absolute Error:")
-            print(formatted_absolute)
-            # self.save_and_later_average_errors(ratio, relative_error, absolute_error, timer, t, save_dir="error_logs",mode="save")
-            print("------------------------------")
 
             # ___Continue with the simulation using the enforced positions___
             velocities = (positions_ICE - prev_positions) / dt
@@ -396,13 +290,14 @@ class Unit_test_sim(nn.Module):
         for t in range(time_horizon):
             # Step 1–5 in Algorithm 1:
             total_force = self.External_Force(self.mass_matrix)  # Apply gravity
-            acc = torch.linalg.solve(self.mass_matrix, total_force.unsqueeze(-1)).squeeze(-1)
-            velocities_t = velocities_t + acc * dt  # V̂_{t+1}
-            positions_t1 = positions_t + velocities_t * dt  # X̂_{t+1}
-
+            positions_t1 = self.Numerical_Integration(self.mass_matrix, total_force, velocities_t,
+                                                   positions_t, dt)
+            positions_t1_before_clamp = positions_t1.clone()
+            positions_t1[:,self.parent_clamped_selection,:] = self.undeformed_vert[:,self.parent_clamped_selection,:].detach() # Apply clamped constraints
+            print('clamp',positions_t1-positions_t1_before_clamp)
             # Enforce inextensibility constraint (Step 4)
-            for _ in range(20):  # constraint_loop
-                positions_t1, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+            for _ in range(1):  # constraint_loop
+                positions_t1, _ = self.constraints_enforcement.predX_Inextensibility_Constraint_Enforcement(
                     self.batch,
                     positions_t1,
                     self.batched_m_restEdgeL,
@@ -411,7 +306,7 @@ class Unit_test_sim(nn.Module):
                     self.inext_scale,
                     self.mass_scale,
                     self.zero_mask_num,
-                    self.undeformed_vert,
+                    self.b_undeformed_vert,
                     self.bkgrad,
                     self.n_branch
                 )
