@@ -16,7 +16,7 @@ import os
 sys.path.append(module_dir)
 from constraints_solver import constraints_enforcement
 from util import rotation_matrix, computeW, computeLengths, computeEdges, visualize_tensors_3d_in_same_plot_no_zeros
-import gradient_saver
+import gradients
 import numpy as np
 from scipy.optimize import check_grad
 import re
@@ -89,9 +89,9 @@ class Unit_test_sim(nn.Module):
         self.batched_m_restEdgeL_neg = self.m_restEdgeL_neg.repeat(self.batch, 1, 1).view(-1, n_edge)
         self.undeformed_vert = nn.Parameter(rest_vert)
         ## for storing the old gradients from inextensibility enforcement
-        self.bkgrad = gradient_saver.BackwardGradientIC(self.batch *n_branch, n_vert)
-        self.bkgrad_neg = gradient_saver.BackwardGradientIC(self.batch * n_branch, n_vert)
-        self.bkgrad_pos = gradient_saver.BackwardGradientIC(self.batch * n_branch, n_vert)
+        self.bkgrad = gradients.BackwardGradientIC(self.batch *n_branch, n_vert)
+        self.bkgrad_neg = gradients.BackwardGradientIC(self.batch * n_branch, n_vert)
+        self.bkgrad_pos = gradients.BackwardGradientIC(self.batch * n_branch, n_vert)
 
         self.gravity = nn.Parameter(torch.tensor((0, 0, -9.81), device=device))
         self.dt = 1e-2

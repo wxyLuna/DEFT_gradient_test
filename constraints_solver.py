@@ -12,8 +12,7 @@ import numpy as np
 torch.set_default_dtype(torch.float64)
 import torch.nn as nn
 
-import gradient_IC
-import gradient_saver
+import gradients
 from iterative_gradients import func_DX_ICitr_batch
 
 torch.set_default_dtype(torch.float64)
@@ -339,7 +338,7 @@ class constraints_enforcement(nn.Module):
             # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
 
             # ___Update the gradient for the current vertices___
-            grad_DX_X_step = gradient_IC.grad_DX_X_ICitr_batch(
+            grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
@@ -358,7 +357,7 @@ class constraints_enforcement(nn.Module):
             grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
 
             # ___Update the gradient for the undeformed vertices___
-            grad_DX_Xinit_step = gradient_IC.grad_DX_Xinit_ICitr_batch(
+            grad_DX_Xinit_step = gradients.grad_DX_Xinit_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
@@ -377,7 +376,7 @@ class constraints_enforcement(nn.Module):
             :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
 
             # ___Update the gradient for the mass scale___
-            grad_DX_M_step = gradient_IC.grad_DX_M_ICitr_batch(
+            grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
