@@ -102,11 +102,11 @@ class Unit_test_sim(nn.Module):
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
-        self.clamped_index = torch.tensor([[1.0, 0.0,0,0,0, 1.0, 1.0]]) # hardcoded clamped index for the first vertex
+        self.clamped_index = torch.tensor([[1.0, 0,0,0,0.0, 0.0, 0.0]]) # hardcoded clamped index for the first vertex
         self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
         self.n_branch=n_branch
         # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
-        self.parent_clamped_selection = torch.tensor((0, 1, -2, -1))
+        self.parent_clamped_selection = torch.tensor((0, -1), device=device)  # hardcoded parent clamped selection
 
 
 
@@ -114,10 +114,13 @@ class Unit_test_sim(nn.Module):
                        ):
         return torch.matmul(mass_matrix, self.gravity.view(-1, 1)).squeeze(-1)
 
-    def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, dt):
+    def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, dt,clamped_index):
         acc = torch.linalg.solve(mass_matrix, total_force.unsqueeze(-1)).squeeze(-1)
+        # clamp_mask = clamped_index.bool().view(1, 7, 1)
         velocities = velocities + acc * dt
-        positions = positions + velocities * dt  # not wrapped in nn.Parameter
+        # velocities[clamp_mask.expand_as(velocities)] = 0
+        positions = positions + velocities * dt
+        print('positions in Numerical Integration',positions)# not wrapped in nn.Parameter
         return positions
 
 
@@ -286,20 +289,22 @@ class Unit_test_sim(nn.Module):
         # Initial positions and velocities
         positions_t = self.undeformed_vert.clone().detach()  # shape: [batch, n_vert, 3]
         velocities_t = torch.zeros_like(positions_t)
+        clamp_mask = self.clamped_index.bool().view(1, 7, 1)  # shape (1, 7, 1)
 
         for t in range(time_horizon):
             # Step 1–5 in Algorithm 1:
             total_force = self.External_Force(self.mass_matrix)  # Apply gravity
             positions_t1 = self.Numerical_Integration(self.mass_matrix, total_force, velocities_t,
-                                                   positions_t, dt)
-            positions_t1_before_clamp = positions_t1.clone()
-            positions_t1[:,self.parent_clamped_selection,:] = self.undeformed_vert[:,self.parent_clamped_selection,:].detach() # Apply clamped constraints
-            print('clamp',positions_t1-positions_t1_before_clamp)
+                                                   positions_t, dt,self.clamped_index)
+            positions_t1_clamp_index = positions_t1.clone()
+
+            positions_t1_clamp_index[clamp_mask.expand_as(positions_t1)] = self.undeformed_vert.detach()[clamp_mask.expand_as(positions_t1)]
+
             # Enforce inextensibility constraint (Step 4)
             for _ in range(1):  # constraint_loop
-                positions_t1, _ = self.constraints_enforcement.predX_Inextensibility_Constraint_Enforcement(
+                positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
-                    positions_t1,
+                    positions_t1_clamp_index,
                     self.batched_m_restEdgeL,
                     self.mass_matrix,
                     self.clamped_index,
@@ -312,12 +317,13 @@ class Unit_test_sim(nn.Module):
                 )
 
             # Update velocity after constraint enforcement
-            velocities_t = (positions_t1 - positions_t) / dt
+            velocities_t = (positions_ICE - positions_t) / dt
+            print('velocities_t', velocities_t)
 
             # Save trajectory
-            b_DLOs_vertices_traj[t] = positions_t1.detach().cpu()
+            b_DLOs_vertices_traj[t] = positions_ICE.detach().cpu()
 
             # Prepare for next step
-            positions_t = positions_t1.clone()
+            positions_t = positions_ICE.clone()
 
         return b_DLOs_vertices_traj  # shape: [time_horizon, batch * n_branch, n_vert, 3]

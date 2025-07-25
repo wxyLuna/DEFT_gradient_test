@@ -18,7 +18,7 @@ class BackwardGradientIC:
         return
 
 class BackwardGradientDamping:
-    def __init__(self, batch, brach, num_vertices):
+    def __init__(self, batch, branch, num_vertices):
         # the batch here is actually num_batch * num_branch, while the branch is num_branch
         self.grad_DX_damping = None
         self.reset(batch, branch, num_vertices)

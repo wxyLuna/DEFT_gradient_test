@@ -32,13 +32,6 @@ class TrainSimpleTrajData(Dataset):
                 prev = full_traj[i: i + time_horizon]
                 curr = full_traj[i + 1: i + 1 + time_horizon]
                 targ = full_traj[i + 2: i + 2 + time_horizon]
-                # Apply clamp selection
-
-                clamp_selection = clamp_selection % undeformed_vert.shape[0]
-                for v in clamp_selection:
-                    prev[:, :, v, :] = undeformed_vert[v, :].clone()
-                    curr[:, :, v, :] = undeformed_vert[v, :].clone()
-                    targ[:, :, v, :] = undeformed_vert[v, :].clone()
 
                 self.prev_traj.append(prev)
                 self.curr_traj.append(curr)

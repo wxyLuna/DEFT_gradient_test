@@ -284,8 +284,10 @@ class constraints_enforcement(nn.Module):
         # for i in range(5):
             # Extract the 'edge' vector, masked by zero_mask_num
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
-            # print('undeformed_vertices:', undeformed_vertices[:, i], undeformed_vertices[:, i + 1])
-            # print('current vertices:',current_vertices[:, i],current_vertices[:, i + 1])
+            if i == 1:
+                print('updated_edges',updated_edges)
+
+
 
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)#iter_Grad has higher precision
@@ -296,7 +298,11 @@ class constraints_enforcement(nn.Module):
 
             # l = 1 - 2L^2 / (L^2 + |edge|^2)
             l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
-            print(f'at edge {i+1} l for vertices{i + 1} - vertices{i}:', l)
+            if i == 1:
+                print('nominal_length_square',nominal_length_square[:,i])
+                print('denominator',denominator)
+                print(f'at edge {i+1} l for vertices{i + 1} - vertices{i}:', l)
+
 
             # If all edges are within tolerance, skip
             are_all_close_to_zero = torch.all(torch.abs(l) < self.tolerance)
@@ -311,7 +317,7 @@ class constraints_enforcement(nn.Module):
 
             # l_scale -> (batch,) -> expanded for each dimension
             l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
-            print(f'at edge {i + 1} l_scale:', l_scale)
+
 
             current_vertices_copy = current_vertices.clone()
 
@@ -344,7 +350,7 @@ class constraints_enforcement(nn.Module):
             # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
 
             # ___Update the gradient for the current vertices___
-            grad_DX_X_step = gradient_IC.grad_DX_X_ICitr_batch(
+            grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
@@ -363,7 +369,7 @@ class constraints_enforcement(nn.Module):
             grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
 
             # ___Update the gradient for the undeformed vertices___
-            grad_DX_Xinit_step = gradient_IC.grad_DX_Xinit_ICitr_batch(
+            grad_DX_Xinit_step = gradients.grad_DX_Xinit_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
@@ -382,7 +388,7 @@ class constraints_enforcement(nn.Module):
             :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
 
             # ___Update the gradient for the mass scale___
-            grad_DX_M_step = gradient_IC.grad_DX_M_ICitr_batch(
+            grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
