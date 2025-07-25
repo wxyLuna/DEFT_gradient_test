@@ -28,6 +28,17 @@ class BackwardGradientDamping:
         self.grad_DX_damping = np.zeros((batch, num_vertices*3, branch), dtype=np.float32)
         return
 
+class BackwardGradientIR:
+    def __init__(self, batch, num_vertices):
+        # the batch here is actually num_batch * num_branch
+        self.grad_DX_IR = None
+        self.reset(batch, num_vertices)
+        return
+
+    def reset(self, batch, num_vertices):
+        self.grad_DX_IR = np.zeros((batch, num_vertices*3, 1), dtype=np.float32)
+        return
+
 # Gradient Solver
     # Inextensibility Constraint Enforcement
 def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
@@ -223,15 +234,50 @@ def grad_DX_damping_batch(integration_ratio, dt, b_DLOs_velocity, n_branch):
     """
 
     batch_size = b_DLOs_velocity.shape[0]
+
     b_DLOs_velocity_np = b_DLOs_velocity.detach().cpu().numpy()
     integration_ratio_np = integration_ratio.detach().cpu().numpy()
-    dt = dt.detach().cpu().numpy()
+    dt_np = dt.detach().cpu().numpy()
     
     # separate the velocities for each branch
     b_DLOs_velocity_expand = np.zeros((batch_size, n_vert, 3, n_branch), dtype=np.float32)
     for i in range(batch_size):
         b_DLOs_velocity_expand[i, :, :, i % n_branch] = b_DLOs_velocity_np[i, :, :]
     b_DLOs_velocity_expand = b_DLOs_velocity_expand.reshape(batch_size, n_vert * 3, n_branch)
-    grad_DX_damping = - integration_ratio_np * dt**2 * b_DLOs_velocity_expand
+    grad_DX_damping = - integration_ratio_np * dt_np**2 * b_DLOs_velocity_expand
 
     return grad_DX_damping
+
+    # Integration Ratio
+def grad_DX_IR_batch(dt, b_DLOs_velocity, mass_matrix, force, damping):
+    """
+    Batch version of Gradient of the integration ratio constraint iterative function with respect to the integration ratio.
+
+    # Inputs:
+    - dt: [1] time step size
+    - b_DLOs_velocity: [batch_size, n_vert, 3] velocities of the DLOs
+    - mass_matrix: [batch_size, n_vert, 3, 3] mass matrix of the DLOs
+    - force: [batch_size, n_vert, 3] forces acting on the DLOs
+    - damping: [n_branch] damping forces acting on the DLOs
+
+    # Outputs:
+    - grad_DX_IR: [batch_size, n_vert*3, 1] gradient of DX_IR with respect to the integration ratio
+
+    the batch here is actually num_batch * num_branch, while the branch is num_branch
+    """
+    
+    batch_size = b_DLOs_velocity.shape[0]
+    n_branch = damping.shape
+
+    dt_np = dt.detach().cpu().numpy()
+    b_DLOs_velocity_np = b_DLOs_velocity.detach().cpu().numpy()
+    mass_matrix_np = mass_matrix.detach().cpu().numpy()
+    force_np = force.detach().cpu().numpy()
+    damping_np = damping.detach().cpu().numpy()
+
+    acc = np.linalg.pinv(mass_matrix_np) @ force_np - b_DLOs_velocity_np * damping_np[:, np.newaxis, np.newaxis]
+    vel = b_DLOs_velocity_np + acc * dt_np
+    vel_shrinked = vel.reshape(batch_size, -1, 1)  # [batch_size, n_vert*3, 1]
+    grad_DX_IR = vel_shrinked * dt_np
+
+    return grad_DX_IR
