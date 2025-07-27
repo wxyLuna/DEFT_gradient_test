@@ -3,6 +3,7 @@ import torch.nn as nn
 
 # Import DEFT functions
 from DEFT_func import DEFT_func
+
 from util import rotation_matrix, computeW, computeLengths, computeEdges, visualize_tensors_3d_in_same_plot_no_zeros
 from constraints_solver import constraints_enforcement
 import pytorch3d.transforms.rotation_conversions
@@ -102,7 +103,7 @@ class Unit_test_sim(nn.Module):
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
-        self.clamped_index = torch.tensor([[1.0, 0,0,0,0.0, 0.0, 0.0]]) # hardcoded clamped index for the first vertex
+        self.clamped_index = torch.tensor([[1.0, 1,0,0,0.0, 1.0, 1.0]]) # hardcoded clamped index for the first vertex
         self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
         self.n_branch=n_branch
         # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
@@ -115,12 +116,12 @@ class Unit_test_sim(nn.Module):
         return torch.matmul(mass_matrix, self.gravity.view(-1, 1)).squeeze(-1)
 
     def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, dt,clamped_index):
+        '''Perform numerical integration using the mass matrix and total force.'''
         acc = torch.linalg.solve(mass_matrix, total_force.unsqueeze(-1)).squeeze(-1)
         # clamp_mask = clamped_index.bool().view(1, 7, 1)
         velocities = velocities + acc * dt
         # velocities[clamp_mask.expand_as(velocities)] = 0
         positions = positions + velocities * dt
-        print('positions in Numerical Integration',positions)# not wrapped in nn.Parameter
         return positions
 
 
@@ -180,6 +181,25 @@ class Unit_test_sim(nn.Module):
             if abs_vals:
                 avg_abs_error = np.mean(np.concatenate(abs_vals)) / 10
                 print(f"Averaged Absolute Error / 10: {avg_abs_error:.3e}")
+    def Rod_init(self, batch, m_restEdgeL, clamped_index):
+        """
+        Initialize the rod with undeformed vertices and compute rest lengths.
+        """
+        undeformed_vert, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    batch,
+                    (self.undeformed_vert.clone()).repeat(batch, 1, 1),
+                    m_restEdgeL, ## change to nominal length
+                    self.mass_matrix,
+                    clamped_index,
+                    self.inext_scale,
+                    self.mass_scale,
+                    self.zero_mask_num,
+                    self.b_undeformed_vert,
+                    self.bkgrad,
+                    self.n_branch
+                )
+        return undeformed_vert
+
 
     def iterative_sim(self, time_horizon, positions_traj, previous_positions_traj,target_traj, loss_func,dt,timer):
         traj_loss_eval = 0.0
@@ -301,7 +321,7 @@ class Unit_test_sim(nn.Module):
             positions_t1_clamp_index[clamp_mask.expand_as(positions_t1)] = self.undeformed_vert.detach()[clamp_mask.expand_as(positions_t1)]
 
             # Enforce inextensibility constraint (Step 4)
-            for _ in range(1):  # constraint_loop
+            for _ in range(10):  # constraint_loop
                 positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
                     positions_t1_clamp_index,
@@ -318,7 +338,10 @@ class Unit_test_sim(nn.Module):
 
             # Update velocity after constraint enforcement
             velocities_t = (positions_ICE - positions_t) / dt
-            print('velocities_t', velocities_t)
+            print('positions_ICE', positions_ICE)
+            print('positions_t1', positions_t1)
+            print('velocities',velocities_t)
+
 
             # Save trajectory
             b_DLOs_vertices_traj[t] = positions_ICE.detach().cpu()

@@ -34,6 +34,7 @@ def computeEdges(vertices, zero_mask):
     # Subtract consecutive vertices to get edges,
     # then zero them out where zero_mask is True.
     edges = torch.where(zero_mask.unsqueeze(dim=-1), 0., vertices[:, 1:] - vertices[:, :-1])
+
     return edges
 
 

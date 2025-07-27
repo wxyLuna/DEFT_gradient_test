@@ -238,7 +238,7 @@ class DEFT_sim(nn.Module):
         self.undeformed_vert = nn.Parameter(b_init_n_vert)
 
         self.b_init_n_vert= b_init_n_vert
-        print(' self.b_init_n_vert at init', self.b_init_n_vert)
+
 
 
 
