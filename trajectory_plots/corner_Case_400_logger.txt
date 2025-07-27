@@ -1,0 +1,273 @@
+Enforcing inextensibility constraint for edge 1
+at edge 1 l for vertices1 - vertices0: tensor([0.], grad_fn=<IndexPutBackward0>)
+all edges are within tolerance, skipping inextensibility constraint enforcement
+Enforcing inextensibility constraint for edge 2
+at edge 2 l for vertices2 - vertices1: tensor([0.0361], grad_fn=<IndexPutBackward0>)
+Edge 1-2 l_scale: tensor([[[ 0.0170,  0.0000,  0.0000],
+         [ 0.0000,  0.0170,  0.0000],
+         [ 0.0000,  0.0000,  0.0170]],
+
+        [[-0.0191, -0.0000, -0.0000],
+         [-0.0000, -0.0191, -0.0000],
+         [-0.0000, -0.0000, -0.0191]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.7884, 0.0099, 0.0833]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.5856, 0.0099, 0.0282]], grad_fn=<SelectBackward0>)
+Edge 1 error: tensor(0.0001, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 3
+at edge 3 l for vertices3 - vertices2: tensor([0.0398], grad_fn=<IndexPutBackward0>)
+Edge 2-3 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0198, -0.0000, -0.0000],
+         [-0.0000, -0.0198, -0.0000],
+         [-0.0000, -0.0000, -0.0198]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.5816, 0.0100, 0.0280]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.3880, 0.0109, 0.0226]], grad_fn=<SelectBackward0>)
+Edge 2 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 4
+at edge 4 l for vertices4 - vertices3: tensor([0.0432], grad_fn=<IndexPutBackward0>)
+Edge 3-4 l_scale: tensor([[[ 0.0200,  0.0000,  0.0000],
+         [ 0.0000,  0.0200,  0.0000],
+         [ 0.0000,  0.0000,  0.0200]],
+
+        [[-0.0232, -0.0000, -0.0000],
+         [-0.0000, -0.0232, -0.0000],
+         [-0.0000, -0.0000, -0.0232]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.3840, 0.0109, 0.0234]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.1922, 0.0131, 0.0648]], grad_fn=<SelectBackward0>)
+Edge 3 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 5
+at edge 5 l for vertices5 - vertices4: tensor([0.0409], grad_fn=<IndexPutBackward0>)
+Edge 4-5 l_scale: tensor([[[ 0.0241,  0.0000,  0.0000],
+         [ 0.0000,  0.0241,  0.0000],
+         [ 0.0000,  0.0000,  0.0241]],
+
+        [[-0.0168, -0.0000, -0.0000],
+         [-0.0000, -0.0168, -0.0000],
+         [-0.0000, -0.0000, -0.0168]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.1875, 0.0132, 0.0668]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.0025, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+Edge 4 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 6
+at edge 6 l for vertices6 - vertices5: tensor([0.0339], grad_fn=<IndexPutBackward0>)
+Edge 5-6 l_scale: tensor([[[ 1.6327e-22,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  1.6327e-22,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  1.6327e-22]],
+
+        [[-1.7592e-22, -0.0000e+00, -0.0000e+00],
+         [-0.0000e+00, -1.7592e-22, -0.0000e+00],
+         [-0.0000e+00, -0.0000e+00, -1.7592e-22]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.0025, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[-0.0947,  0.0124,  0.1862]], grad_fn=<SelectBackward0>)
+Edge 5 error: tensor(0.0035, grad_fn=<MeanBackward0>)
+clamp tensor([[[ 0.0000e+00,  0.0000e+00,  9.8100e-04],
+         [ 3.5834e-03, -2.7818e-06,  1.9553e-03],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [-3.2322e-03,  4.6530e-05,  2.3590e-03],
+         [ 0.0000e+00,  0.0000e+00,  9.8100e-04]]], grad_fn=<SubBackward0>)
+Enforcing inextensibility constraint for edge 1
+at edge 1 l for vertices1 - vertices0: tensor([0.], grad_fn=<IndexPutBackward0>)
+all edges are within tolerance, skipping inextensibility constraint enforcement
+Enforcing inextensibility constraint for edge 2
+at edge 2 l for vertices2 - vertices1: tensor([0.0361], grad_fn=<IndexPutBackward0>)
+Edge 1-2 l_scale: tensor([[[ 0.0170,  0.0000,  0.0000],
+         [ 0.0000,  0.0170,  0.0000],
+         [ 0.0000,  0.0000,  0.0170]],
+
+        [[-0.0191, -0.0000, -0.0000],
+         [-0.0000, -0.0191, -0.0000],
+         [-0.0000, -0.0000, -0.0191]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.7884, 0.0099, 0.0833]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.5856, 0.0101, 0.0282]], grad_fn=<SelectBackward0>)
+Edge 1 error: tensor(0.0001, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 3
+at edge 3 l for vertices3 - vertices2: tensor([0.0397], grad_fn=<IndexPutBackward0>)
+Edge 2-3 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0198, -0.0000, -0.0000],
+         [-0.0000, -0.0198, -0.0000],
+         [-0.0000, -0.0000, -0.0198]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.5816, 0.0101, 0.0280]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.3880, 0.0112, 0.0226]], grad_fn=<SelectBackward0>)
+Edge 2 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 4
+at edge 4 l for vertices4 - vertices3: tensor([0.0431], grad_fn=<IndexPutBackward0>)
+Edge 3-4 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0232, -0.0000, -0.0000],
+         [-0.0000, -0.0232, -0.0000],
+         [-0.0000, -0.0000, -0.0232]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.3840, 0.0112, 0.0234]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.1922, 0.0133, 0.0648]], grad_fn=<SelectBackward0>)
+Edge 3 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 5
+at edge 5 l for vertices5 - vertices4: tensor([0.0409], grad_fn=<IndexPutBackward0>)
+Edge 4-5 l_scale: tensor([[[ 0.0241,  0.0000,  0.0000],
+         [ 0.0000,  0.0241,  0.0000],
+         [ 0.0000,  0.0000,  0.0241]],
+
+        [[-0.0168, -0.0000, -0.0000],
+         [-0.0000, -0.0168, -0.0000],
+         [-0.0000, -0.0000, -0.0168]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.1875, 0.0134, 0.0668]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.0025, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+Edge 4 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 6
+at edge 6 l for vertices6 - vertices5: tensor([0.0339], grad_fn=<IndexPutBackward0>)
+Edge 5-6 l_scale: tensor([[[ 1.6318e-22,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  1.6318e-22,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  1.6318e-22]],
+
+        [[-1.7583e-22, -0.0000e+00, -0.0000e+00],
+         [-0.0000e+00, -1.7583e-22, -0.0000e+00],
+         [-0.0000e+00, -0.0000e+00, -1.7583e-22]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.0025, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[-0.0947,  0.0124,  0.1862]], grad_fn=<SelectBackward0>)
+Edge 5 error: tensor(0.0035, grad_fn=<MeanBackward0>)
+clamp tensor([[[ 0.0000e+00,  0.0000e+00,  9.8100e-04],
+         [ 3.5816e-03, -6.3740e-06,  1.9547e-03],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [-3.2308e-03,  4.3420e-05,  2.3583e-03],
+         [ 0.0000e+00,  0.0000e+00,  9.8100e-04]]], grad_fn=<SubBackward0>)
+Enforcing inextensibility constraint for edge 1
+at edge 1 l for vertices1 - vertices0: tensor([0.], grad_fn=<IndexPutBackward0>)
+all edges are within tolerance, skipping inextensibility constraint enforcement
+Enforcing inextensibility constraint for edge 2
+at edge 2 l for vertices2 - vertices1: tensor([0.0361], grad_fn=<IndexPutBackward0>)
+Edge 1-2 l_scale: tensor([[[ 0.0170,  0.0000,  0.0000],
+         [ 0.0000,  0.0170,  0.0000],
+         [ 0.0000,  0.0000,  0.0170]],
+
+        [[-0.0191, -0.0000, -0.0000],
+         [-0.0000, -0.0191, -0.0000],
+         [-0.0000, -0.0000, -0.0191]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.7884, 0.0100, 0.0833]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.5856, 0.0103, 0.0282]], grad_fn=<SelectBackward0>)
+Edge 1 error: tensor(0.0001, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 3
+at edge 3 l for vertices3 - vertices2: tensor([0.0397], grad_fn=<IndexPutBackward0>)
+Edge 2-3 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0198, -0.0000, -0.0000],
+         [-0.0000, -0.0198, -0.0000],
+         [-0.0000, -0.0000, -0.0198]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.5816, 0.0103, 0.0281]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.3880, 0.0114, 0.0226]], grad_fn=<SelectBackward0>)
+Edge 2 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 4
+at edge 4 l for vertices4 - vertices3: tensor([0.0431], grad_fn=<IndexPutBackward0>)
+Edge 3-4 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0232, -0.0000, -0.0000],
+         [-0.0000, -0.0232, -0.0000],
+         [-0.0000, -0.0000, -0.0232]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.3840, 0.0115, 0.0235]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.1922, 0.0135, 0.0648]], grad_fn=<SelectBackward0>)
+Edge 3 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 5
+at edge 5 l for vertices5 - vertices4: tensor([0.0408], grad_fn=<IndexPutBackward0>)
+Edge 4-5 l_scale: tensor([[[ 0.0241,  0.0000,  0.0000],
+         [ 0.0000,  0.0241,  0.0000],
+         [ 0.0000,  0.0000,  0.0241]],
+
+        [[-0.0167, -0.0000, -0.0000],
+         [-0.0000, -0.0167, -0.0000],
+         [-0.0000, -0.0000, -0.0167]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.1875, 0.0136, 0.0668]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.0024, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+Edge 4 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 6
+at edge 6 l for vertices6 - vertices5: tensor([0.0339], grad_fn=<IndexPutBackward0>)
+Edge 5-6 l_scale: tensor([[[ 1.6311e-22,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  1.6311e-22,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  1.6311e-22]],
+
+        [[-1.7576e-22, -0.0000e+00, -0.0000e+00],
+         [-0.0000e+00, -1.7576e-22, -0.0000e+00],
+         [-0.0000e+00, -0.0000e+00, -1.7576e-22]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.0024, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[-0.0947,  0.0124,  0.1862]], grad_fn=<SelectBackward0>)
+Edge 5 error: tensor(0.0035, grad_fn=<MeanBackward0>)
+clamp tensor([[[ 0.0000e+00,  0.0000e+00,  9.8100e-04],
+         [ 3.5804e-03, -1.0178e-05,  1.9543e-03],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  0.0000e+00],
+         [-3.2299e-03,  4.0135e-05,  2.3579e-03],
+         [ 0.0000e+00,  0.0000e+00,  9.8100e-04]]], grad_fn=<SubBackward0>)
+Enforcing inextensibility constraint for edge 1
+at edge 1 l for vertices1 - vertices0: tensor([0.], grad_fn=<IndexPutBackward0>)
+all edges are within tolerance, skipping inextensibility constraint enforcement
+Enforcing inextensibility constraint for edge 2
+at edge 2 l for vertices2 - vertices1: tensor([0.0361], grad_fn=<IndexPutBackward0>)
+Edge 1-2 l_scale: tensor([[[ 0.0170,  0.0000,  0.0000],
+         [ 0.0000,  0.0170,  0.0000],
+         [ 0.0000,  0.0000,  0.0170]],
+
+        [[-0.0191, -0.0000, -0.0000],
+         [-0.0000, -0.0191, -0.0000],
+         [-0.0000, -0.0000, -0.0191]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.7884, 0.0100, 0.0833]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.5856, 0.0105, 0.0282]], grad_fn=<SelectBackward0>)
+Edge 1 error: tensor(0.0001, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 3
+at edge 3 l for vertices3 - vertices2: tensor([0.0397], grad_fn=<IndexPutBackward0>)
+Edge 2-3 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0198, -0.0000, -0.0000],
+         [-0.0000, -0.0198, -0.0000],
+         [-0.0000, -0.0000, -0.0198]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.5816, 0.0106, 0.0281]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.3880, 0.0117, 0.0226]], grad_fn=<SelectBackward0>)
+Edge 2 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 4
+at edge 4 l for vertices4 - vertices3: tensor([0.0431], grad_fn=<IndexPutBackward0>)
+Edge 3-4 l_scale: tensor([[[ 0.0199,  0.0000,  0.0000],
+         [ 0.0000,  0.0199,  0.0000],
+         [ 0.0000,  0.0000,  0.0199]],
+
+        [[-0.0232, -0.0000, -0.0000],
+         [-0.0000, -0.0232, -0.0000],
+         [-0.0000, -0.0000, -0.0232]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.3840, 0.0118, 0.0235]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.1922, 0.0137, 0.0648]], grad_fn=<SelectBackward0>)
+Edge 3 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 5
+at edge 5 l for vertices5 - vertices4: tensor([0.0408], grad_fn=<IndexPutBackward0>)
+Edge 4-5 l_scale: tensor([[[ 0.0241,  0.0000,  0.0000],
+         [ 0.0000,  0.0241,  0.0000],
+         [ 0.0000,  0.0000,  0.0241]],
+
+        [[-0.0167, -0.0000, -0.0000],
+         [-0.0000, -0.0167, -0.0000],
+         [-0.0000, -0.0000, -0.0167]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.1875, 0.0138, 0.0668]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[0.0024, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+Edge 4 error: tensor(0.0002, grad_fn=<MeanBackward0>)
+Enforcing inextensibility constraint for edge 6
+at edge 6 l for vertices6 - vertices5: tensor([0.0339], grad_fn=<IndexPutBackward0>)
+Edge 5-6 l_scale: tensor([[[ 1.6308e-22,  0.0000e+00,  0.0000e+00],
+         [ 0.0000e+00,  1.6308e-22,  0.0000e+00],
+         [ 0.0000e+00,  0.0000e+00,  1.6308e-22]],
+
+        [[-1.7572e-22, -0.0000e+00, -0.0000e+00],
+         [-0.0000e+00, -1.7572e-22, -0.0000e+00],
+         [-0.0000e+00, -0.0000e+00, -1.7572e-22]]], grad_fn=<MulBackward0>)
+current_vertices[:, i] tensor([[0.0024, 0.0160, 0.1457]], grad_fn=<SelectBackward0>)
+current_vertices[:, i+1] tensor([[-0.0947,  0.0124,  0.1862]], grad_fn=<SelectBackward0>)
+Edge 5 error: tensor(0.0035, grad_fn=<MeanBackward0>)

@@ -285,7 +285,7 @@ class constraints_enforcement(nn.Module):
         # for i in range(5):
             # Extract the 'edge' vector, masked by zero_mask_num
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
-
+            print('zero_mask_num[:, i].', zero_mask_num[:, i])
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)#iter_Grad has higher precision
 
@@ -307,11 +307,11 @@ class constraints_enforcement(nn.Module):
             # l_cat used for scaling -> shape (batch,) -> repeated
 
 
-            l_cat = (l.unsqueeze(-1).repeat(1, 2).view(-1) / scale[:, i])
-            # scale_i = scale[:, i]  # this is actually per-vertex, shape (batch, 2)
-            # scale_ip1 = scale[:, i + 1]
-            # scale_edge = torch.stack([scale_i, scale_ip1], dim=1)  # shape: (batch, 2)
-            # l_cat = (l.unsqueeze(-1).repeat(1, 2) / scale_edge).view(-1)
+            # l_cat = (l.unsqueeze(-1).repeat(1, 2).view(-1) / scale[:, i])
+            scale_i = scale[:, i]  # this is actually per-vertex, shape (batch, 2)
+            scale_ip1 = scale[:, i + 1]
+            scale_edge = torch.stack([scale_i, scale_ip1], dim=1)  # shape: (batch, 2)
+            l_cat = (l.unsqueeze(-1).repeat(1, 2) / scale_edge).view(-1)
 
             # l_scale -> (batch,) -> expanded for each dimension
             l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
@@ -334,7 +334,8 @@ class constraints_enforcement(nn.Module):
             ).view(-1, 2, 3)
             print('current_vertices[:, i]',  current_vertices[:, i])
             print('current_vertices[:, i+1]', current_vertices[:, i+1])
-
+            error = torch.norm(current_vertices[:, i + 1] - current_vertices[:, i], dim=-1) - nominal_length[:, i]
+            print(f"Edge {i+1} error:", error.abs().mean())
 
             DX_0, DX_1 = func_DX_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
@@ -441,6 +442,7 @@ class constraints_enforcement(nn.Module):
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
             # print('undeformed_vertices:', undeformed_vertices[:, i], undeformed_vertices[:, i + 1])
             # print('current vertices:',current_vertices[:, i],current_vertices[:, i + 1])
+
 
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)#iter_Grad has higher precision
