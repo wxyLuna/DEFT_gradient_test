@@ -296,6 +296,9 @@ class constraints_enforcement(nn.Module):
 
             # l = 1 - 2L^2 / (L^2 + |edge|^2)
             l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
+            if i == 5:
+                print('l mismatch is',l)
+
 
 
             # If all edges are within tolerance, skip
@@ -307,11 +310,11 @@ class constraints_enforcement(nn.Module):
             # l_cat used for scaling -> shape (batch,) -> repeated
 
 
-            # l_cat = (l.unsqueeze(-1).repeat(1, 2).view(-1) / scale[:, i])
-            scale_i = scale[:, i]  # this is actually per-vertex, shape (batch, 2)
-            scale_ip1 = scale[:, i + 1]
-            scale_edge = torch.stack([scale_i, scale_ip1], dim=1)  # shape: (batch, 2)
-            l_cat = (l.unsqueeze(-1).repeat(1, 2) / scale_edge).view(-1)
+            l_cat = (l.unsqueeze(-1).repeat(1, 2).view(-1) / scale[:, i])
+            # scale_i = scale[:, i]  # this is actually per-vertex, shape (batch, 2)
+            # scale_ip1 = scale[:, i + 1]
+            # scale_edge = torch.stack([scale_i, scale_ip1], dim=1)  # shape: (batch, 2)
+            # l_cat = (l.unsqueeze(-1).repeat(1, 2) / scale_edge).view(-1)
 
             # l_scale -> (batch,) -> expanded for each dimension
             l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
@@ -332,8 +335,17 @@ class constraints_enforcement(nn.Module):
                     .repeat(1, 2, 1)
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
-            print('current_vertices[:, i]',  current_vertices[:, i])
-            print('current_vertices[:, i+1]', current_vertices[:, i+1])
+            # print('current_vertices[:, i]',  current_vertices[:, i])
+            # print('current_vertices[:, i+1]', current_vertices[:, i+1])
+            delta_i = current_vertices[:, i] - current_vertices_copy[:, i]
+            delta_i1 = current_vertices[:, i + 1] - current_vertices_copy[:, i + 1]
+            print("scale:", scale)
+
+            if not torch.isclose(delta_i, torch.zeros_like(delta_i), atol=1e-8).all():
+                print("delta vert i", delta_i)
+
+            if not torch.isclose(delta_i1, torch.zeros_like(delta_i1), atol=1e-8).all():
+                print("delta vert i+1", delta_i1)
             error = torch.norm(current_vertices[:, i + 1] - current_vertices[:, i], dim=-1) - nominal_length[:, i]
             print(f"Edge {i+1} error:", error.abs().mean())
 

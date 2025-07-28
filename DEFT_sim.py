@@ -27,7 +27,7 @@ sys.path.append(module_dir)
 from GNN_tree import BatchedGNNModel
 from torch.autograd.profiler import record_function
 import time
-import gradient_saver
+# import gradient_saver
 
 class DEFT_sim(nn.Module):
     """
@@ -150,6 +150,7 @@ class DEFT_sim(nn.Module):
         # Expand clamped vertex selection for the parent across the batch
         batch_indices = self.selected_parent_index.unsqueeze(1).expand(-1, parent_clamped_selection.size(0))
         parent_indices = parent_clamped_selection.unsqueeze(0).expand(self.selected_parent_index.size(0), -1)
+        print('parent_indiices', parent_indices)
 
         # Child1/Child2 clamped indices
         batch_child1_indices = self.selected_child1_index
@@ -435,7 +436,6 @@ class DEFT_sim(nn.Module):
         )
 
 
-        self.bkgrad = gradient_saver.BackwardGradientIC(self.batch*self.n_branch,n_vert) # or n_branch * n_vert?
 
 
 
@@ -705,6 +705,7 @@ class DEFT_sim(nn.Module):
         forces = mass_matrix @ self.gravity.clone()
         # Mask out non-existent vertices
         forces[:, 1:] *= (1 - self.zero_mask.to(torch.uint8)).repeat(self.batch, 1).unsqueeze(-1)
+        print("External forces:", forces)
 
         return forces
 

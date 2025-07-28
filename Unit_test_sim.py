@@ -103,7 +103,7 @@ class Unit_test_sim(nn.Module):
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
-        self.clamped_index = torch.tensor([[1.0, 1,0,0,0.0, 1.0, 1.0]]) # hardcoded clamped index for the first vertex
+        self.clamped_index = torch.tensor([[1,1,1,1,1,1,0]]) # hardcoded clamped index for the first vertex
         self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
         self.n_branch=n_branch
         # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
