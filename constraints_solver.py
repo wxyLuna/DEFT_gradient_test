@@ -285,17 +285,23 @@ class constraints_enforcement(nn.Module):
         # for i in range(5):
             # Extract the 'edge' vector, masked by zero_mask_num
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
-            print('zero_mask_num[:, i].', zero_mask_num[:, i])
+            print('updated_Edges',updated_edges)
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)#iter_Grad has higher precision
+            print('nominal_length_square[:, i]', nominal_length_square[:, i])
+
+            print('updated_edges square', (updated_edges * updated_edges).sum(dim=1))
+            print('denominator', denominator)
 
             # l ~ measure of inextensibility mismatch
             l = torch.zeros_like(nominal_length_square[:, i])
 
             mask = zero_mask_num[:, i].bool()
+            print('denominator[mask]', denominator[mask])
 
             # l = 1 - 2L^2 / (L^2 + |edge|^2)
             l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
+
             if i == 5:
                 print('l mismatch is',l)
 
@@ -335,17 +341,7 @@ class constraints_enforcement(nn.Module):
                     .repeat(1, 2, 1)
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
-            # print('current_vertices[:, i]',  current_vertices[:, i])
-            # print('current_vertices[:, i+1]', current_vertices[:, i+1])
-            delta_i = current_vertices[:, i] - current_vertices_copy[:, i]
-            delta_i1 = current_vertices[:, i + 1] - current_vertices_copy[:, i + 1]
-            print("scale:", scale)
 
-            if not torch.isclose(delta_i, torch.zeros_like(delta_i), atol=1e-8).all():
-                print("delta vert i", delta_i)
-
-            if not torch.isclose(delta_i1, torch.zeros_like(delta_i1), atol=1e-8).all():
-                print("delta vert i+1", delta_i1)
             error = torch.norm(current_vertices[:, i + 1] - current_vertices[:, i], dim=-1) - nominal_length[:, i]
             print(f"Edge {i+1} error:", error.abs().mean())
 
@@ -365,7 +361,7 @@ class constraints_enforcement(nn.Module):
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
             )
-            grad_DX_X_step /= np.array(scale[:, i])
+            grad_DX_X_step /= np.repeat(np.array(scale[:, i]),3).reshape(batch,1,6)
 
             grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2), :].copy()
 
@@ -384,7 +380,7 @@ class constraints_enforcement(nn.Module):
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
                 undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
             )
-            grad_DX_Xinit_step /= np.array(scale[:, i])
+            grad_DX_Xinit_step /= np.repeat(np.array(scale[:, i]),3).reshape(batch,1,6)
 
             grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2), :].copy()
             grad_chain_passed_DX_Xinit = grad_DX_X_step @ grad_interest_DX_Xinit

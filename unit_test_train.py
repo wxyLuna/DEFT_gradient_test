@@ -80,15 +80,15 @@ for run_id in range(experiment_runs):
     )
     train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
 
-    eval_dataset = EvalSimpleTrajData(
-        undeformed_vert=undeformed_vert,
-        gravity=gravity * 0.95,
-        time_horizon=time_horizon,
-        n_samples=n_samples - 2,
-        dt=dt,
-        device=device
-    )
-    eval_loader = DataLoader(eval_dataset, batch_size=batch, shuffle=False)
+    # eval_dataset = EvalSimpleTrajData(
+    #     undeformed_vert=undeformed_vert,
+    #     gravity=gravity * 0.95,
+    #     time_horizon=time_horizon,
+    #     n_samples=n_samples - 2,
+    #     dt=dt,
+    #     device=device
+    # )
+    # eval_loader = DataLoader(eval_dataset, batch_size=batch, shuffle=False)
     # === Define optimizer and loss ===
     optimizer = optim.SGD([
         sim.undeformed_vert,
@@ -106,13 +106,11 @@ for run_id in range(experiment_runs):
     for epoch in range(epochs):
         epoch_train_loss = 0.0
         batch_count = 0
-        # if epoch == 0 and os.path.exists("gravity_only_model.pth"):
-        #     sim.load_state_dict(torch.load("gravity_only_model.pth"))
-
 
         for previous_positions_traj, current_positions_traj,target_traj in train_loader:
             timer += 1
             print('timer',timer)
+
 
 
 

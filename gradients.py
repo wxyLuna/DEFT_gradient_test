@@ -218,7 +218,7 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     return grad_DX_M
 
     # Damping
-def grad_DX_damping_batch(integration_ratio, dt, b_DLOs_velocity, n_branch):
+def grad_DX_damping_batch(n_vert, integration_ratio, dt, b_DLOs_velocity, n_branch):
     """
     Batch version of Gradient of the damping constraint iterative function with respect to the damping coefficients.
 

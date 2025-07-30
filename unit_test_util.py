@@ -40,11 +40,11 @@ class TrainSimpleTrajData(Dataset):
 
                 self.global_idx += 1
 
-        self.prev_traj = torch.stack(self.prev_traj)
-        self.curr_traj = torch.stack(self.curr_traj)
-        self.targ_traj = torch.stack(self.targ_traj)
+        self.prev_traj = torch.stack(self.prev_traj).squeeze(0)
+        self.curr_traj = torch.stack(self.curr_traj).squeeze(0)
+        self.targ_traj = torch.stack(self.targ_traj).squeeze(0)
         self.save_trajectory_with_undeformed(
-            self.curr_traj.squeeze(0),  # shape [T, B=1, V, 3]
+            self.curr_traj,  # shape [T, B=1, V, 3]
             self.undeformed_vert,
             idx=self.global_idx,
             save_dir="trajectory_plots",

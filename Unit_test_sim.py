@@ -16,7 +16,7 @@ import sys
 import os
 sys.path.append(module_dir)
 from constraints_solver import constraints_enforcement
-from util import rotation_matrix, computeW, computeLengths, computeEdges, visualize_tensors_3d_in_same_plot_no_zeros
+from util import rotation_matrix, computeW, computeLengths, computeEdges, clamp_index
 import gradients
 import numpy as np
 from scipy.optimize import check_grad
@@ -103,25 +103,40 @@ class Unit_test_sim(nn.Module):
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
         self.constraints_enforcement = constraints_enforcement(n_branch)
-        self.clamped_index = torch.tensor([[1,1,1,1,1,1,0]]) # hardcoded clamped index for the first vertex
-        self.inext_scale = self.clamped_index * (1e20)+1 # clamped points does not move
-        self.n_branch=n_branch
-        # self.damping = nn.Parameter(torch.tensor(0.1, device=device))  # damping factor
-        self.parent_clamped_selection = torch.tensor((0, -1), device=device)  # hardcoded parent clamped selection
-
+        self.parent_clamped_selection = torch.tensor((0, 1, -2, -1),device=device)  # hardcoded parent clamped selection
+        self.child1_clamped_selection = torch.tensor((0), device=device)  # hardcoded child1 clamped selection
+        self.child2_clamped_selection = torch.tensor((0), device=device)
+        clamp_parent = True
+        clamp_child1 = False
+        clamp_child2 = False
+        self.clamped_index, parent_theta_clamp, child1_theta_clamp, child2_theta_clamp = clamp_index(self.batch, self.parent_clamped_selection, self.child1_clamped_selection, self.child2_clamped_selection,
+                                         n_branch, n_vert, clamp_parent, clamp_child1, clamp_child2) # hardcoded clamped index for the first vertex
+        inext_scale = self.clamped_index * 1e20
+        self.inext_scale = (inext_scale + 1.).repeat(batch, 1)
+        self.inext_scale = torch.cat((self.inext_scale[:, :-1], self.inext_scale[:, 1:]), dim=1).view(-1, n_edge)
+        print('self.inext_scale',   self.inext_scale)
+        self.n_branch = n_branch
+        self.damping = nn.Parameter(torch.tensor(2.5, device=device))  # damping factor
+        self.integration_ratio = nn.Parameter(torch.tensor(1., device=device))
 
 
     def External_Force(self, mass_matrix
                        ):
         return torch.matmul(mass_matrix, self.gravity.view(-1, 1)).squeeze(-1)
 
-    def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, dt,clamped_index):
+    def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, damping, integration_ratio, dt):
         '''Perform numerical integration using the mass matrix and total force.'''
-        acc = torch.linalg.solve(mass_matrix, total_force.unsqueeze(-1)).squeeze(-1)
-        # clamp_mask = clamped_index.bool().view(1, 7, 1)
-        velocities = velocities + acc * dt
-        # velocities[clamp_mask.expand_as(velocities)] = 0
-        positions = positions + velocities * dt
+
+
+        velocities = velocities.clone() + (
+                (
+                        total_force.unsqueeze(dim=-2)
+                        - velocities.unsqueeze(dim=-2) * damping.repeat(self.batch).clone().view(-1, 1, 1, 1)
+                        * self.mass_diagonal.repeat(self.batch, 1).unsqueeze(dim=-1).unsqueeze(dim=-1)
+                )@ torch.linalg.pinv(mass_matrix) * dt).reshape(-1, velocities.size()[1], 3)
+
+        #
+        positions = positions.clone() + velocities * dt * integration_ratio
         return positions
 
 
@@ -206,12 +221,9 @@ class Unit_test_sim(nn.Module):
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
         constraint_loop = 20
-        # Enforce clamp constraints
-
-        # parent_fix_point = self.undeformed_vert[:, :, 0, self.parent_clamped_selection]
-        # positions_traj[:, :, 0, self.parent_clamped_selection] = parent_fix_point
-        # previous_positions_traj[:, :, 0, self.parent_clamped_selection] = parent_fix_point
-        # target_traj[:, :, 0, self.parent_clamped_selection] = parent_fix_point
+        print('positions_traj shape', positions_traj.shape)
+        print('previous_positions_traj shape', previous_positions_traj.shape)
+        print('target_traj shape', target_traj.shape)
 
 
 
@@ -230,7 +242,7 @@ class Unit_test_sim(nn.Module):
                 prev_positions = positions_old.clone()
 
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
-                                                               prev_positions, dt)
+                                                               prev_positions, self.damping, self.integration_ratio, dt)
 
 
 
@@ -315,16 +327,16 @@ class Unit_test_sim(nn.Module):
             # Step 1–5 in Algorithm 1:
             total_force = self.External_Force(self.mass_matrix)  # Apply gravity
             positions_t1 = self.Numerical_Integration(self.mass_matrix, total_force, velocities_t,
-                                                   positions_t, dt,self.clamped_index)
-            positions_t1_clamp_index = positions_t1.clone()
-
-            positions_t1_clamp_index[clamp_mask.expand_as(positions_t1)] = self.undeformed_vert.detach()[clamp_mask.expand_as(positions_t1)]
-
+                                                   positions_t, self.damping, self.integration_ratio, dt)
+            # positions_t1_clamp_index = positions_t1.clone()
+            # positions_t1_clamp_index[clamp_mask.expand_as(positions_t1)] = self.undeformed_vert.detach()[clamp_mask.expand_as(positions_t1)]
+            positions_t1_clamp_selection = positions_t1.clone()
+            positions_t1_clamp_selection[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
             # Enforce inextensibility constraint (Step 4)
             for _ in range(10):  # constraint_loop
                 positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
-                    positions_t1_clamp_index,
+                    positions_t1_clamp_selection,
                     self.batched_m_restEdgeL,
                     self.mass_matrix,
                     self.clamped_index,
