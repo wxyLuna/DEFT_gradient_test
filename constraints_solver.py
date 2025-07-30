@@ -281,36 +281,28 @@ class constraints_enforcement(nn.Module):
 
         # Loop over each edge
         for i in range(current_vertices.size()[1] - 1):
-            print(f'Enforcing inextensibility constraint for edge {i+1} ')
+
         # for i in range(5):
             # Extract the 'edge' vector, masked by zero_mask_num
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
-            print('updated_Edges',updated_edges)
+
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)#iter_Grad has higher precision
-            print('nominal_length_square[:, i]', nominal_length_square[:, i])
-
-            print('updated_edges square', (updated_edges * updated_edges).sum(dim=1))
-            print('denominator', denominator)
 
             # l ~ measure of inextensibility mismatch
             l = torch.zeros_like(nominal_length_square[:, i])
 
             mask = zero_mask_num[:, i].bool()
-            print('denominator[mask]', denominator[mask])
+
 
             # l = 1 - 2L^2 / (L^2 + |edge|^2)
             l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
-
-            if i == 5:
-                print('l mismatch is',l)
-
 
 
             # If all edges are within tolerance, skip
             are_all_close_to_zero = torch.all(torch.abs(l) < self.tolerance)
             if are_all_close_to_zero:
-                print('all edges are within tolerance, skipping inextensibility constraint enforcement')
+                # print('all edges are within tolerance, skipping inextensibility constraint enforcement')
                 continue
 
             # l_cat used for scaling -> shape (batch,) -> repeated
@@ -324,8 +316,6 @@ class constraints_enforcement(nn.Module):
 
             # l_scale -> (batch,) -> expanded for each dimension
             l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
-            print(f'Edge {i}-{i + 1} l_scale:', l_scale)
-
 
             current_vertices_copy = current_vertices.clone()
 
@@ -343,7 +333,7 @@ class constraints_enforcement(nn.Module):
             ).view(-1, 2, 3)
 
             error = torch.norm(current_vertices[:, i + 1] - current_vertices[:, i], dim=-1) - nominal_length[:, i]
-            print(f"Edge {i+1} error:", error.abs().mean())
+
 
             DX_0, DX_1 = func_DX_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
@@ -416,158 +406,6 @@ class constraints_enforcement(nn.Module):
 
         return current_vertices, grad_per_ICitr
 
-    def predX_Inextensibility_Constraint_Enforcement(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                               scale, mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch):
-        """
-        Enforces inextensibility constraints for a single DLO by adjusting vertex positions
-        so that the edge lengths stay near their nominal values.
-
-        Args:
-            batch (int): Batch size (number of rods or scenes).
-            current_vertices (torch.Tensor): Shape (batch, n_vertices, 3).
-            nominal_length (torch.Tensor): Shape (batch, n_edges). The nominal distances between adjacent vertices.
-            DLO_mass (torch.Tensor): (Not used directly here, but can store mass information for gradient calculations).
-            clamped_index (torch.Tensor): Indices in the rods to clamp or fix (not used here).
-            scale (torch.Tensor): Scale factors for each edge, shape (batch, n_edges).
-            mass_scale (torch.Tensor): Another scaling for masses, shape (batch, n_edges).
-            zero_mask_num (torch.Tensor): 0/1 or boolean mask indicating which edges are active.
-
-        Returns:
-            current_vertices (torch.Tensor): Updated vertex positions enforcing length constraints.
-        """
-        # Square of the nominal length for each edge
-        nominal_length_square = nominal_length * nominal_length
-
-        # grad_per_ICitr = gradient_saver.BackwardGradientIC(current_vertices.size()[1])
-        grad_per_ICitr = bkgrad
-        undeformed_vertices = undeformed_vertices.repeat(batch, 1, 1)
-
-        # Loop over each edge
-        for i in range(current_vertices.size()[1] - 1):
-            print(f'Enforcing inextensibility constraint for edge {i+1} ')
-        # for i in range(5):
-            # Extract the 'edge' vector, masked by zero_mask_num
-            updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
-            # print('undeformed_vertices:', undeformed_vertices[:, i], undeformed_vertices[:, i + 1])
-            # print('current vertices:',current_vertices[:, i],current_vertices[:, i + 1])
-
-
-            # denominator = L^2 + updated_edges^2
-            denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)#iter_Grad has higher precision
-
-            # l ~ measure of inextensibility mismatch
-            l = torch.zeros_like(nominal_length_square[:, i])
-            mask = zero_mask_num[:, i].bool()
-
-            # l = 1 - 2L^2 / (L^2 + |edge|^2)
-            l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
-            print(f'at edge {i+1} l for vertices{i + 1} - vertices{i}:', l)
-
-            # If all edges are within tolerance, skip
-            are_all_close_to_zero = torch.all(torch.abs(l) < self.tolerance)
-            if are_all_close_to_zero:
-                print('all edges are within tolerance, skipping inextensibility constraint enforcement')
-                continue
-
-            # l_cat used for scaling -> shape (batch,) -> repeated
-
-
-            l_cat = (l.unsqueeze(-1).repeat(1, 2).view(-1) / scale[:, i])
-
-            # l_scale -> (batch,) -> expanded for each dimension
-            l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
-            print(f'at edge {i + 1} l_scale:', l_scale)
-
-            current_vertices_copy = current_vertices.clone()
-
-            # Update vertices in pair: i, i+1
-            #   new_position = old_position + l_scale * 'edge_vector'
-            #   repeated for each vertex in the pair
-            current_vertices[:, (i, i + 1)] = current_vertices[:, (i, i + 1)] + (
-                    l_scale @ updated_edges.unsqueeze(dim=1)
-                    .repeat(1, 2, 1)
-                    .view(-1, 3, 1)
-            ).view(-1, 2, 3)
-            delta_x = (l_scale @ updated_edges.unsqueeze(dim=1)
-                    .repeat(1, 2, 1)
-                    .view(-1, 3, 1)
-            ).view(-1, 2, 3)
-            print('DX within inextensibility constraint enforcement:', delta_x)
-
-            # compute func_DX for sanity check
-            print('start gradient computation')
-
-            DX_0, DX_1 = func_DX_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-            DX_0 /= scale[:, i]
-            DX_1  /= scale[:, i]
-            # print('DX_0 properly scaled',DX_0)
-            # print('DX_1 properly scaled',DX_1)
-            # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
-
-            # ___Update the gradient for the current vertices___
-            grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-            grad_DX_X_step /= np.array(scale[:, i])
-
-            grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2), :].copy()
-
-            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
-            grad_step_DX_X = np.concatenate((
-                np.zeros((n_branch * batch, 6, 3 * i)),
-                grad_DX_X_step,
-                np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-
-            grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
-
-            # ___Update the gradient for the undeformed vertices___
-            grad_DX_Xinit_step = gradients.grad_DX_Xinit_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-            grad_DX_Xinit_step /= np.array(scale[:, i])
-
-            grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2), :].copy()
-            grad_chain_passed_DX_Xinit = grad_DX_X_step @ grad_interest_DX_Xinit
-            grad_step_DX_Xinit = np.concatenate((
-                np.zeros((n_branch * batch, 6, 3 * i)),
-                grad_DX_Xinit_step,
-                np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-
-            grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2),
-            :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
-
-            # ___Update the gradient for the mass scale___
-            grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-
-            grad_DX_M_step /= np.array(scale[:, i])
-
-            grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2), :].copy()
-            grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
-
-            grad_step_DX_M = np.concatenate((
-                np.zeros((n_branch * batch, 6, i)),
-                grad_DX_M_step,
-                np.zeros((n_branch * batch, 6, (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-
-            grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2),
-            :] = grad_interest_DX_M + grad_step_DX_M + grad_chain_passed_DX_M
-
-        return current_vertices, grad_per_ICitr
 
     def Inextensibility_Constraint_Enforcement_Coupling(self, parent_vertices, child_vertices, coupling_index,
                                                         coupling_mass_scale, selected_parent_index,

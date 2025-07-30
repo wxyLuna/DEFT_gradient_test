@@ -24,15 +24,28 @@ time_horizon = total_time-3
 eval_time_horizon = total_time - 2
 epochs = 1
 dt = 1e-2
-n_samples = 1  # Number of trajectories for training/evaluation
+n_samples = 1  # Number of trajectories(batches) for training/evaluation
 timer = 0
-experiment_runs = 1
+experiment_runs = 4
 torch.manual_seed(int(time.time()))
 parent_clamped_selection = torch.tensor((0, 1, -2, -1))
 
-# Initialize simulation
-# b_DLO_mass = torch.ones(batch, n_vert, device=device)
-# b_DLO_mass = torch.tensor([1.0, 1.1, 1.2, 1.1, 1.0, 0.9, 1.0], device=device).repeat(batch, 1)
+rest_vert = torch.tensor([
+            [0.893471, -0.133465, 0.018059],
+            # [0.880771, -0.119666, 0.017733],
+            [0.791946, -0.084258, 0.009944],
+            # [0.680462, -0.102366, 0.018528],
+            [0.590795, -0.144219, 0.021808],
+            # [0.494905, -0.156384, 0.017816],
+            [0.396916, -0.143114, 0.021549],
+            # [0.299291, -0.148755, 0.014955],
+            [0.200583, -0.146497, 0.01727],
+            # [0.09586, -0.142385, 0.016456],
+            [-0.000782, -0.147084, 0.016081],
+            # [-0.071514, -0.17382, 0.015446]
+            [-0.094659, -0.186181, 0.012403]
+
+        ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
 
 # === Define Dataset class with previous_positions_traj generation ===
 class SimpleTrajectoryDataset(Dataset):
@@ -53,10 +66,17 @@ class SimpleTrajectoryDataset(Dataset):
 
 for run_id in range(experiment_runs):
     print(f"\n========== Run {run_id + 1} / 10 ==========\n")
+    # randomize rest vertices slightly for each experiment run
+    rdm_scale = 0.09
+    rdm_vec = torch.rand(batch, n_vert, 3, device=device)
+    vec_norms = torch.norm(rdm_vec, dim=-1, keepdim=True)
+    rdm_vec = rdm_vec / vec_norms * rdm_scale
+    rest_vert = rest_vert + rdm_vec
+    rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
     rdm_mass = torch.rand(batch, n_vert, device=device) * 0.4 + 0.8
 
     b_DLO_mass = rdm_mass
-    sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
+    sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, rest_vert,device)
 
     sim.train()
     # === Create train/eval datasets ===
@@ -69,8 +89,6 @@ for run_id in range(experiment_runs):
     eval_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     train_dataset = TrainSimpleTrajData(
         undeformed_vert=undeformed_vert,
-        clamp_selection=parent_clamped_selection,
-        gravity=gravity,
         time_horizon=time_horizon,
         total_time=total_time,
         n_samples=n_samples,
@@ -79,6 +97,7 @@ for run_id in range(experiment_runs):
         sim=sim
     )
     train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
+    print("train_dataset length:", len(train_dataset))
 
     # eval_dataset = EvalSimpleTrajData(
     #     undeformed_vert=undeformed_vert,

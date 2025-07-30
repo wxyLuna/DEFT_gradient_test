@@ -12,7 +12,7 @@ import os
 
 
 class TrainSimpleTrajData(Dataset):
-    def __init__(self, undeformed_vert,clamp_selection, gravity, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
+    def __init__(self, undeformed_vert, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
         super().__init__()
         # sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
         self.device = device
@@ -40,11 +40,11 @@ class TrainSimpleTrajData(Dataset):
 
                 self.global_idx += 1
 
-        self.prev_traj = torch.stack(self.prev_traj).squeeze(0)
-        self.curr_traj = torch.stack(self.curr_traj).squeeze(0)
-        self.targ_traj = torch.stack(self.targ_traj).squeeze(0)
+        self.prev_traj = torch.stack(self.prev_traj)
+        self.curr_traj = torch.stack(self.curr_traj)
+        self.targ_traj = torch.stack(self.targ_traj)
         self.save_trajectory_with_undeformed(
-            self.curr_traj,  # shape [T, B=1, V, 3]
+            self.curr_traj,  # shape [,n_Sample, T, branch, V, 3]
             self.undeformed_vert,
             idx=self.global_idx,
             save_dir="trajectory_plots",
@@ -79,55 +79,55 @@ class TrainSimpleTrajData(Dataset):
         import numpy as np
 
         os.makedirs(save_dir, exist_ok=True)
+        #trajectory has shape (n_sample, T, B, V, 3)
 
-        T, B, V, _ = trajectory.shape
+        n_sample,T, B, V, _ = trajectory.shape
         trajectory = trajectory.cpu()
         undeformed_vert = undeformed_vert.cpu()
         if undeformed_vert.ndim == 2:  # If shape is [V, 3], expand to [1, V, 3]
             undeformed_vert = undeformed_vert.unsqueeze(0)
+        for batch_idx in range(n_sample):
+            for b in range(B):
+                verts = trajectory[batch_idx]  # [T, B, V, 3]
 
-        for b in range(B):
-            verts = trajectory[:, b]  # shape: [T, V, 3]
-            undeformed = undeformed_vert[b]  # shape: [V, 3]
+                fig = plt.figure(figsize=(16, 8))
+                ax1 = fig.add_subplot(121, projection='3d')
+                ax2 = fig.add_subplot(122, projection='3d')
 
-            fig = plt.figure(figsize=(16, 8))
-            ax1 = fig.add_subplot(121, projection='3d')
-            ax2 = fig.add_subplot(122, projection='3d')
+                for ax in [ax1, ax2]:
+                    for t in range(T):
+                        points = verts[t, b].numpy()  # shape: [V, 3]
+                        ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=1.0,
+                                label=f"t={t}" if t == 0 else "")
+                        for v in range(V):
+                            x, y, z = points[v, :].tolist()
+                            ax.scatter(x, y, z, color='black', s=10)
 
-            for ax in [ax1, ax2]:
-                # Plot time-varying trajectory
-                for t in range(T):
-                    color_strength = 1
-                    points = verts[t].numpy()
-                    ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=color_strength,
-                            label=f"t={t}" if t == 0 else "")
-                    for v in range(V):
-                        x, y, z = points[v]
-                        ax.scatter(x, y, z, color='black', s=10)
-                        ax.text(x, y, z, f'{v}', fontsize=6)
 
-                # Plot undeformed rest shape in green
-                undeformed_np = undeformed.numpy()
-                ax.plot(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', linestyle='--',
-                        label='Undeformed')
-                ax.scatter(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', s=20, marker='x')
+                    undeformed_np = undeformed_vert[b].numpy()
+                    ax.plot(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', linestyle='--',
+                            label='Undeformed')
+                    ax.scatter(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', s=20,
+                               marker='x')
 
-                ax.set_title(f"{title} | Sample {idx}, Wire {b}")
-                ax.set_xlabel("X")
-                ax.set_ylabel("Y")
-                ax.set_zlabel("Z")
-                ax.set_xlim([-0.5, 1.0])
-                ax.set_ylim([-0.5, 1.0])
-                ax.set_zlim([-0.5, 0.5])
-                ax.legend()
+                    ax.set_title(f"{title} | Sample {idx}, Wire {b}")
+                    ax.set_xlabel("X")
+                    ax.set_ylabel("Y")
+                    ax.set_zlabel("Z")
+                    ax.set_xlim([-0.5, 1.0])
+                    ax.set_ylim([-0.5, 1.0])
+                    ax.set_zlim([-0.5, 0.5])
+                    ax.legend()
 
-            ax1.view_init(elev=0, azim=90)
-            ax2.view_init(elev=30, azim=-45)
+                ax1.view_init(elev=0, azim=90)
+                ax2.view_init(elev=30, azim=-45)
 
-            filename = os.path.join(save_dir, f"traj_sample{idx}_wire{b}.png")
-            plt.tight_layout()
-            plt.savefig(filename)
-            plt.close()
+                filename = os.path.join(save_dir, f"traj_sample{batch_idx}{idx}_wire{b}.png")
+                plt.tight_layout()
+                plt.savefig(filename)
+
+                plt.close()
+
 
 
 class EvalSimpleTrajData(Dataset):

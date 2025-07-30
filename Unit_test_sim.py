@@ -19,46 +19,19 @@ from constraints_solver import constraints_enforcement
 from util import rotation_matrix, computeW, computeLengths, computeEdges, clamp_index
 import gradients
 import numpy as np
-from scipy.optimize import check_grad
 import re
 
 
 
 class Unit_test_sim(nn.Module):
-    def __init__(self, batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device):
+    def __init__(self, batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass,rest_vert, device):
         super().__init__()
         self.n_vert = n_vert
         self.n_edge = n_edge
         self.device = device
         self.batch = batch
 
-        # rest_vert = torch.tensor([
-        #     [0.893471, -0.133465, 0.018059],
-        #     [0.590795, -0.144219, 0.021808],
-        #     [0.200583, -0.146497, 0.01727],
-        #     [-0.094659, -0.186181, 0.012403]
-        # ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
-        rest_vert = torch.tensor([
-            [0.893471, -0.133465, 0.018059],
-            # [0.880771, -0.119666, 0.017733],
-            [0.791946, -0.084258, 0.009944],
-            # [0.680462, -0.102366, 0.018528],
-            [0.590795, -0.144219, 0.021808],
-            # [0.494905, -0.156384, 0.017816],
-            [0.396916, -0.143114, 0.021549],
-            # [0.299291, -0.148755, 0.014955],
-            [0.200583, -0.146497, 0.01727],
-            # [0.09586, -0.142385, 0.016456],
-            [-0.000782, -0.147084, 0.016081],
-            # [-0.071514, -0.17382, 0.015446]
-            [-0.094659, -0.186181, 0.012403]
 
-        ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
-
-
-
-
-        rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
         self.b_undeformed_vert = rest_vert.clone()
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
@@ -114,9 +87,8 @@ class Unit_test_sim(nn.Module):
         inext_scale = self.clamped_index * 1e20
         self.inext_scale = (inext_scale + 1.).repeat(batch, 1)
         self.inext_scale = torch.cat((self.inext_scale[:, :-1], self.inext_scale[:, 1:]), dim=1).view(-1, n_edge)
-        print('self.inext_scale',   self.inext_scale)
         self.n_branch = n_branch
-        self.damping = nn.Parameter(torch.tensor(2.5, device=device))  # damping factor
+        self.damping = nn.Parameter(torch.tensor(5.0, device=device))  # damping factor
         self.integration_ratio = nn.Parameter(torch.tensor(1., device=device))
 
 
@@ -137,6 +109,9 @@ class Unit_test_sim(nn.Module):
 
         #
         positions = positions.clone() + velocities * dt * integration_ratio
+
+        #Compute Analytical gradient
+
         return positions
 
 
@@ -221,10 +196,6 @@ class Unit_test_sim(nn.Module):
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
         constraint_loop = 20
-        print('positions_traj shape', positions_traj.shape)
-        print('previous_positions_traj shape', previous_positions_traj.shape)
-        print('target_traj shape', target_traj.shape)
-
 
 
         for t in range(int(time_horizon)):
@@ -233,8 +204,8 @@ class Unit_test_sim(nn.Module):
 
             if t == 0:
                 # print('at time step', t)
-                positions = positions_traj[:,t]
-                prev_positions = previous_positions_traj[:,t].clone()
+                positions = positions_traj[:,t].reshape(-1, self.n_vert, 3)
+                prev_positions = previous_positions_traj[:,t].reshape(-1, self.n_vert, 3)
                 velocities = (positions - prev_positions) / dt
             else:
                 # print('else at time step', t)
@@ -242,7 +213,7 @@ class Unit_test_sim(nn.Module):
                 prev_positions = positions_old.clone()
 
             positions = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
-                                                               prev_positions, self.damping, self.integration_ratio, dt)
+                                                               positions, self.damping, self.integration_ratio, dt)
 
 
 
@@ -266,16 +237,13 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
                 self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
-            # print('positions_ICE', positions_ICE)
-            # print('self.bkgrad.grad_DX_X', self.bkgrad.grad_DX_X)
 
-            # ___Analytical perturbation___
 
             # ___Continue with the simulation using the enforced positions___
             velocities = (positions_ICE - prev_positions) / dt
 
-            gt_positions = target_traj[:, t]
-            gt_velocities = (target_traj[:, t] - positions_traj[:, t]) / dt
+            gt_positions = target_traj[:, t].reshape(-1, self.n_vert, 3)
+            gt_velocities = (target_traj[:, t] - positions_traj[:, t]).view(-1,self.n_vert,3) / dt
             step_loss_pos = loss_func(positions_ICE, gt_positions)
             step_loss_vel = loss_func(velocities, gt_velocities)
 
@@ -350,11 +318,6 @@ class Unit_test_sim(nn.Module):
 
             # Update velocity after constraint enforcement
             velocities_t = (positions_ICE - positions_t) / dt
-            print('positions_ICE', positions_ICE)
-            print('positions_t1', positions_t1)
-            print('velocities',velocities_t)
-
-
             # Save trajectory
             b_DLOs_vertices_traj[t] = positions_ICE.detach().cpu()
 
