@@ -150,7 +150,6 @@ class DEFT_sim(nn.Module):
         # Expand clamped vertex selection for the parent across the batch
         batch_indices = self.selected_parent_index.unsqueeze(1).expand(-1, parent_clamped_selection.size(0))
         parent_indices = parent_clamped_selection.unsqueeze(0).expand(self.selected_parent_index.size(0), -1)
-        print('parent_indiices', parent_indices)
 
         # Child1/Child2 clamped indices
         batch_child1_indices = self.selected_child1_index

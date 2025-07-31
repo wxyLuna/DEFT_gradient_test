@@ -235,9 +235,10 @@ def grad_DX_damping_batch(n_vert, integration_ratio, dt, b_DLOs_velocity, n_bran
 
     batch_size = b_DLOs_velocity.shape[0]
 
+
     b_DLOs_velocity_np = b_DLOs_velocity.detach().cpu().numpy()
     integration_ratio_np = integration_ratio.detach().cpu().numpy()
-    dt_np = dt.detach().cpu().numpy()
+    dt_np = dt
     
     # separate the velocities for each branch
     b_DLOs_velocity_expand = np.zeros((batch_size, n_vert, 3, n_branch), dtype=np.float32)
@@ -269,13 +270,19 @@ def grad_DX_IR_batch(dt, b_DLOs_velocity, mass_matrix, force, damping):
     batch_size = b_DLOs_velocity.shape[0]
     n_branch = damping.shape
 
-    dt_np = dt.detach().cpu().numpy()
-    b_DLOs_velocity_np = b_DLOs_velocity.detach().cpu().numpy()
+    dt_np = dt
+    b_DLOs_velocity_np = b_DLOs_velocity.detach().cpu().numpy()#(1,7,3)
     mass_matrix_np = mass_matrix.detach().cpu().numpy()
-    force_np = force.detach().cpu().numpy()
-    damping_np = damping.detach().cpu().numpy()
+    force_np = force.detach().cpu().numpy()#(1,7,3)
+    damping_np = damping.detach().cpu().numpy()#(5.0)
+    if damping_np.ndim == 0:
+        damping_expand = damping_np.reshape(1, 1, 1)*np.ones((batch_size, 1, 1)) #batch_size, 1, 1
+    else:
+        damping_expand = damping_np.reshape(-1, 1, 1)*np.ones((batch_size, 1, 1))  #batch_size*branch, 1, 1
 
-    acc = np.linalg.pinv(mass_matrix_np) @ force_np - b_DLOs_velocity_np * damping_np[:, np.newaxis, np.newaxis]
+    M_inv = np.linalg.pinv(mass_matrix_np)  # [batch_size, n_vert, 3, 3]
+
+    acc = np.einsum('ijkl,ijl->ijk', M_inv, force_np) - b_DLOs_velocity_np * damping_expand
     vel = b_DLOs_velocity_np + acc * dt_np
     vel_shrinked = vel.reshape(batch_size, -1, 1)  # [batch_size, n_vert*3, 1]
     grad_DX_IR = vel_shrinked * dt_np
