@@ -67,7 +67,7 @@ class SimpleTrajectoryDataset(Dataset):
 for run_id in range(experiment_runs):
     print(f"\n========== Run {run_id + 1} / 10 ==========\n")
     # randomize rest vertices slightly for each experiment run
-    rdm_scale = 0.09
+    rdm_scale = 0.03
     rdm_vec = torch.rand(batch, n_vert, 3, device=device)
     vec_norms = torch.norm(rdm_vec, dim=-1, keepdim=True)
     rdm_vec = rdm_vec / vec_norms * rdm_scale

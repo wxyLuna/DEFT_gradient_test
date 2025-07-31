@@ -94,12 +94,12 @@ class Unit_test_sim(nn.Module):
         self.inext_scale = torch.cat((self.inext_scale[:, :-1], self.inext_scale[:, 1:]), dim=1).view(-1, n_edge)
         self.n_branch = n_branch
         self.damping = nn.Parameter(torch.tensor(5.0, device=device))  # damping factor for single branch
-        self.d_damping = torch.tensor(1*1e-5, device=device)
+        self.d_damping = torch.tensor(1*1e-6, device=device)
         self.damping_pos = nn.Parameter(self.damping + self.d_damping)
-        self.dampping_neg = nn.Parameter(self.damping - self.d_damping)
+        self.damping_neg = nn.Parameter(self.damping - self.d_damping)
 
         self.integration_ratio = nn.Parameter(torch.tensor(1., device=device))
-        self.d_integration_ratio = torch.tensor(0*1e-6, device=device)
+        self.d_integration_ratio = torch.tensor(1*1e-6, device=device)
         self.integration_ratio_pos = nn.Parameter(self.integration_ratio + self.d_integration_ratio)
         self.integration_ratio_neg = nn.Parameter(self.integration_ratio - self.d_integration_ratio)
 
@@ -111,6 +111,9 @@ class Unit_test_sim(nn.Module):
     def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, damping, integration_ratio, dt):
         '''Perform numerical integration using the mass matrix and total force.'''
 
+        # update gradient for corresponding vertices
+        grad_DX_damping = gradients.grad_DX_damping_batch(self.n_vert, integration_ratio, dt, velocities, self.n_branch)
+        grad_DX_IR = gradients.grad_DX_IR_batch(dt, velocities, mass_matrix, total_force, damping)
 
         velocities = velocities.clone() + (
                 (
@@ -121,10 +124,6 @@ class Unit_test_sim(nn.Module):
 
         #
         positions = positions.clone() + velocities * dt * integration_ratio
-
-        #update gradient for corresponding vertices
-        grad_DX_damping = gradients.grad_DX_damping_batch(self.n_vert, integration_ratio, dt, velocities, self.n_branch)
-        grad_DX_IR = gradients.grad_DX_IR_batch(dt, velocities, mass_matrix, total_force, damping)
 
         return positions, grad_DX_damping, grad_DX_IR
 
@@ -236,27 +235,23 @@ class Unit_test_sim(nn.Module):
                                                                positions_input, self.damping, self.integration_ratio, dt)
             self.bkgrad_damping.grad_DX_damping = bkgrad_damping
             self.bkgrad_IR.grad_DX_IR = bkgrad_IR
-            print('positions',positions)
+
 
             positions_pos, _, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                 positions_input, self.damping_pos, self.integration_ratio_pos, dt)
 
             positons_neg, _, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
-                                                                positions_input,self.dampping_neg, self.integration_ratio_neg, dt)
+                                                                positions_input,self.damping_neg, self.integration_ratio_neg, dt)
             #numerical perturbation
             numerical_d_delta_positions_Numerical_Integration = (positions_pos - positons_neg) / 2
             #analytical perturbation
-            analytical_d_delta_positions_Numerical_Integration = (self.bkgrad_damping.grad_DX_damping.reshape(self.batch*self.n_branch,self.n_vert,3,1).squeeze(-1)[0] * self.d_damping.detach().numpy()
-                                                                  + self.bkgrad_IR.grad_DX_IR.reshape(self.batch*self.n_branch,self.n_vert,3,1).squeeze(-1)[0] * self.d_integration_ratio.detach().numpy())
+            analytical_d_delta_positions_Numerical_Integration = (self.bkgrad_damping.grad_DX_damping.reshape(self.batch*self.n_branch,self.n_vert,3,1).squeeze(-1) * self.d_damping.detach().numpy()
+                                                                  + self.bkgrad_IR.grad_DX_IR.reshape(self.batch*self.n_branch,self.n_vert,3,1).squeeze(-1) * self.d_integration_ratio.detach().numpy()) ##B update with matmul
+
             print('analytical vs numerical ratio',numerical_d_delta_positions_Numerical_Integration.detach().numpy()/analytical_d_delta_positions_Numerical_Integration)
 
-
-
-
-
-
-
-
+            #enforce clamped vertices
+            positions[:, self.parent_clamped_selection, :] = self.undeformed_vert[:,self.parent_clamped_selection,:].detach()
             # ___Analytical gradient & Center values for inextensibility constraint enforcement___
             for _ in range(constraint_loop):
                 positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
