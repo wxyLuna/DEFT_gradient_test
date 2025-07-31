@@ -94,12 +94,12 @@ class Unit_test_sim(nn.Module):
         self.inext_scale = torch.cat((self.inext_scale[:, :-1], self.inext_scale[:, 1:]), dim=1).view(-1, n_edge)
         self.n_branch = n_branch
         self.damping = nn.Parameter(torch.tensor(5.0, device=device))  # damping factor for single branch
-        self.d_damping = torch.tensor(0*1e-5, device=device)
+        self.d_damping = torch.tensor(1*1e-5, device=device)
         self.damping_pos = nn.Parameter(self.damping + self.d_damping)
         self.dampping_neg = nn.Parameter(self.damping - self.d_damping)
 
         self.integration_ratio = nn.Parameter(torch.tensor(1., device=device))
-        self.d_integration_ratio = torch.tensor(5*1e-6, device=device)
+        self.d_integration_ratio = torch.tensor(0*1e-6, device=device)
         self.integration_ratio_pos = nn.Parameter(self.integration_ratio + self.d_integration_ratio)
         self.integration_ratio_neg = nn.Parameter(self.integration_ratio - self.d_integration_ratio)
 
@@ -212,9 +212,14 @@ class Unit_test_sim(nn.Module):
         constraint_loop = 20
 
 
+
+
+
         for t in range(int(time_horizon)):
 
-            self.bkgrad.reset(self.batch, self.n_vert)
+            self.bkgrad.reset(self.batch,self.n_vert)
+            self.bkgrad_damping.reset(self.batch,self.n_branch, self.n_vert)
+            self.bkgrad_IR.reset(self.batch, self.n_vert)
 
             if t == 0:
                 # print('at time step', t)
@@ -231,6 +236,7 @@ class Unit_test_sim(nn.Module):
                                                                positions_input, self.damping, self.integration_ratio, dt)
             self.bkgrad_damping.grad_DX_damping = bkgrad_damping
             self.bkgrad_IR.grad_DX_IR = bkgrad_IR
+            print('positions',positions)
 
             positions_pos, _, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
                                                                 positions_input, self.damping_pos, self.integration_ratio_pos, dt)
@@ -323,10 +329,11 @@ class Unit_test_sim(nn.Module):
         # Initial positions and velocities
         positions_t = self.undeformed_vert.clone().detach()  # shape: [batch, n_vert, 3]
         velocities_t = torch.zeros_like(positions_t)
-        clamp_mask = self.clamped_index.bool().view(1, 7, 1)  # shape (1, 7, 1)
+        positions_t[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
 
         for t in range(time_horizon):
             # Step 1–5 in Algorithm 1:
+
             total_force = self.External_Force(self.mass_matrix)  # Apply gravity
             positions_t1,_, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities_t,
                                                    positions_t, self.damping, self.integration_ratio, dt)
