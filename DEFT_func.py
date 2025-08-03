@@ -76,6 +76,7 @@ class DEFT_func(nn.Module):
             dim=1
         )
         self.twist_stiffness = twist_stiffness
+        # print("in DEFT_func init, the value of self.twist_stiffness: ", self.twist_stiffness)
 
         # Error/stiffness thresholds for numerical stability
         self.err = torch.tensor(1e-6).to(device)
@@ -99,6 +100,7 @@ class DEFT_func(nn.Module):
             .repeat(batch, 1, 1)
             .view(-1, self.n_edge - 1)
         )
+        
 
         # Repeat edge_mask for batch dimension
         # shape: (batch*n_branch, n_edge, 1)
@@ -377,6 +379,8 @@ class DEFT_func(nn.Module):
         twist_stiffness_variable = th.Variable(
             self.twist_stiffness, name="twist_stiffness"
         )
+        # print('before optimization of theta start, the value of self.twist_stiffness: ', self.twist_stiffness)
+        # print('before optimization of theta start, the value of twist_stiffness_variable: ', twist_stiffness_variable.tensor)
 
         # 4. Call the solver to optimize theta_full
         # Switch between a numpy-based solver or a pure PyTorch-based solver
@@ -403,6 +407,7 @@ class DEFT_func(nn.Module):
                 optimization_mask,
             )
         else:
+            print("==================================================== running theta_optimize() in updateCurrentState() of DEFT_func.py ====================================================")
             theta_full = theta_optimize(
                 self.n_branch,
                 cost_weight_variable,
@@ -423,6 +428,7 @@ class DEFT_func(nn.Module):
                 twist_stiffness_variable,
                 optimization_mask,
             )
+            # print("after optimization of theta, the value of twist_stiffness_variable: ", twist_stiffness_variable.tensor)
 
         # 5. Compute final material frames based on optimized twist angles
         m1, m2 = self.computeMaterialFrame(theta_full, b_u, b_v)
@@ -630,19 +636,28 @@ class DEFT_func(nn.Module):
                                      shape (batch, n_edge).
         """
         # Initialize gradient w.r.t. theta to zero
-        dEdtheta = torch.zeros_like(theta)
+        print("==================================================== computedEdtheta() in DEFT_func.py ====================================================")
+        dEdtheta = torch.zeros_like(theta) # torch.Size([3, 12])
+        batch, n_edge = theta.size()
+        # the shape of m1: torch.Size([3, 12, 3]), m2: torch.Size([3, 12, 3]), kb: torch.Size([3, 12, 3])
+        # the shape of theta: torch.Size([3, 12]), JB: torch.Size([3, 12, 2, 2])
+        # JB[0, 0,:,:] = tensor([[ 0.0000, -0.0040],
+        #                        [ 0.0040,  0.0000]], grad_fn=<SliceBackward0>)
+        # the shape of m_restW1: torch.Size([3, 12, 2]), m_restW2: torch.Size([3, 12, 2])
+        # the shape of restRegionL: torch.Size([3, 12])
 
         if self.n_edge > 1:
             # Compute current material curvature
             # (o_W1, o_W2) relative to m1, m2
-            o_W1, o_W2 = self.computeMaterialCurvature(kb, m1, m2)
+            o_W1, o_W2 = self.computeMaterialCurvature(kb, m1, m2) # torch.Size([3, 12, 2]), torch.Size([3, 12, 2])
 
             # Bending part:
             # derivative for edges [:-1]
-            temp = (o_W1[:, 1:] - m_restW1[:, 1:]).unsqueeze(-1)
-            JB_j = JB[:, :-1]  # JB for edges [:-1]
-            JB_wij = torch.matmul(JB_j, temp).squeeze(-1)
-            term1 = (o_W1[:, 1:] * JB_wij).sum(dim=-1)
+            temp = (o_W1[:, 1:] - m_restW1[:, 1:]).unsqueeze(-1) # torch.Size([3, 11, 2, 1])
+            # the shape of JB: torch.Size([3, 12, 2, 2])
+            JB_j = JB[:, :-1]  # JB for edges [:-1], torch.Size([3, 11, 2, 2])
+            JB_wij = torch.matmul(JB_j, temp).squeeze(-1) # torch.Size([3, 11, 2])
+            term1 = (o_W1[:, 1:] * JB_wij).sum(dim=-1) # torch.Size([3, 11])
             dEdtheta[:, :-1] += term1
 
             # derivative for edges [1:]
@@ -656,17 +671,89 @@ class DEFT_func(nn.Module):
             # clamp twist_stiffness to a minimum threshold
             twist_stiffness_clamped = torch.clamp(
                 self.twist_stiffness_unsq, min=self.stiff_threshold
-            )
+            ) # torch.Size([3, 11])
             # difference in theta among adjacent edges
-            term1 = 2.0 * twist_stiffness_clamped * (theta[:, 1:] - theta[:, :-1])
+            term1 = 2.0 * twist_stiffness_clamped * (theta[:, 1:] - theta[:, :-1]) # torch.Size([3, 11])
 
-            valid_mask = restRegionL[:, 1:] != 0
+            valid_mask = restRegionL[:, 1:] != 0 # torch.Size([3, 11])
             term1_result = torch.zeros_like(term1)
             term1_result[valid_mask] = term1[valid_mask] / restRegionL[:, 1:][valid_mask]
-            term1 = term1_result
+            term1 = term1_result # torch.Size([3, 11])
 
             # Add to dEdtheta for edges
             dEdtheta[:, 1:] += term1
             dEdtheta[:, :-1] -= term1
+            print("==================================================== end of computedEdtheta() in DEFT_func.py ====================================================")
+            # print("===================================================== computedEdtheta() in DEFT_func.py ====================================================")
+            # print("the input theta is: ", theta[0])
+            # print("the output dEdtheta is: ", dEdtheta[0])
 
         return dEdtheta
+
+
+    def compute_dE2dTheta2(self, m1, m2, kb, theta, JB, m_restW1, m_restW2, restRegionL):
+        """
+        Compute the second derivative of elastic energy wrt twist angles theta
+        for the bending part only.
+
+        Args:
+            m1, m2 (torch.Tensor): Material frame axes, shape (batch, n_edge, 3).
+            kb (torch.Tensor): Curvature binormal, shape (batch, n_edge, 3).
+            theta (torch.Tensor): Current twist angles, shape (batch, n_edge).
+            JB (torch.Tensor): The 2x2 block of the "bending" stiffness matrix
+                               (clamped or thresholded).
+            m_restW1 (torch.Tensor): Rest curvature about m1, shape (batch, n_edge, 2).
+            m_restW2 (torch.Tensor): Rest curvature about m2, shape (batch, n_edge, 2).
+
+        Returns:
+            dE2d_theta2_bending (torch.Tensor): Second derivative of elastic energy wrt twist angles,
+                                                 shape (batch, n_edge).
+        """
+        batch, n_edge = theta.size()
+        hessian_theta = torch.zeros(batch, n_edge, n_edge, dtype=theta.dtype, device=theta.device)
+        # print(f"the shape of hessian_theta is: ",  {hessian_theta.shape})
+        JT_base = torch.tensor([[0.0, 1.0], [-1.0, 0.0]], dtype=theta.dtype, device=theta.device)
+
+        if self.n_edge > 1:
+            # bending part: diagonal entries
+            o_W1, o_W2 = self.computeMaterialCurvature(kb, m1, m2)
+            temp = (o_W1[:, 1:] - m_restW1[:, 1:]).unsqueeze(-1)  # shape: (batch, n_edge-2, 2, 1)
+            JB_j = JB[:, :-1]  # JB for edges [:-1], shape: (batch, n_edge-1, 2, 2)
+            JT = JT_base.unsqueeze(0).unsqueeze(0).repeat(batch, n_edge, 1, 1)
+            JTBJ_j = torch.matmul(JT[:,:-1], JB_j)  # shape: (batch, n_edge-1, 2, 2)
+
+            JTBJ_wij = torch.matmul(JTBJ_j, temp).squeeze(-1)  # shape: (batch, n_edge-1, 2)
+            term1 = (o_W1[:, 1:] * JTBJ_wij).sum(dim=-1)
+            print(term1[0])
+            i = torch.arange(n_edge-1, device=hessian_theta.device)
+            hessian_theta[:, i, i] += term1
+
+            temp = (o_W2[:, 1:] - m_restW2[:, 1:]).unsqueeze(-1)  # shape: (batch, n_edge-2, 2, 1)
+            JB_j = JB[:, 1:]  # JB for edges [1:], shape: (batch, n_edge-1, 2, 2)
+            JTBJ_j = torch.matmul(JT[:, 1:], JB_j)
+            JTBJ_wij = torch.matmul(JTBJ_j, temp).squeeze(-1)
+            term2 = (o_W2[:, 1:] * JTBJ_wij).sum(dim=-1)
+            hessian_theta[:, i+1, i+1] += term2
+
+            # twist part: diagonal entries
+            twist_stiffness_full = self.twist_stiffness[:, :, 1:].repeat(batch, 1, 1).view(-1, self.n_edge - 1)
+            twist_stiffness_clamped = torch.clamp(
+                twist_stiffness_full, min=self.stiff_threshold
+            )
+            term1 = twist_stiffness_clamped
+            valid_mask = restRegionL != 0
+            term1_result = torch.zeros_like(term1)
+            term1_result[valid_mask] = term1[valid_mask] / restRegionL
+            i_full = torch.arange(n_edge, device=hessian_theta.device)
+            hessian_theta[:, i_full, i_full] += term1
+            hessian_theta[:, i, i] += term1[:, 1:]
+
+            # Off-diagonal entries
+            hessian_theta[:, i+1, i] += term1[:, 1:]
+            hessian_theta[:, i, i+1] -= term1[:, 1:]
+        return hessian_theta 
+
+            
+
+
+

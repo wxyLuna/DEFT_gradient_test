@@ -19,8 +19,6 @@ from tqdm import tqdm
 import os
 import argparse
 import matplotlib.pyplot as plt
-import time
-from torch.profiler import profile, record_function, ProfilerActivity
 
 
 def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, inference_vis, inference_1_batch,
@@ -388,6 +386,10 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
         damping=damping,
         learning_weight=learning_weight
     )
+    # print("DEFT_sim_train initialized")
+    # print(f"the shape of twist_stiffness: {twist_stiffness.shape}")
+    # print(f"the value of twist_stiffness: {twist_stiffness}")
+    
     DEFT_sim_eval = DEFT_sim(
         batch=eval_batch,
         n_branch=n_branch,
@@ -419,9 +421,13 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
         damping=damping,
         learning_weight=learning_weight
     )
+    # print("DEFT_sim_eval initialized")
+    # print(f"the shape of twist_stiffness: {twist_stiffness.shape}")
+    # print(f"the value of twist_stiffness: {twist_stiffness}")
 
     # Load pretrained models for initialization depending on BDLO_type and clamp_type
     if load_model:
+        print("Loading pretrained model...")
         if BDLO_type == 1 and clamp_type == "ends":
             DEFT_sim_train.load_state_dict(torch.load("save_model/BDLO1/DEFT_1_780_1.pth"), strict=False)
         if BDLO_type == 1 and clamp_type == "middle":
@@ -576,8 +582,10 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
     if model == "DEFT":
         training_iteration = 0
         for epoch in range(train_epoch):
+            print("Training epoch %s" % epoch)
             bar = tqdm(train_data_loader)
             for data in bar:
+                print("Training iteration %s" % training_iteration)
                 # Evaluate the model on the eval set periodically
                 if save_steps % evaluate_period == 0:
                     part_eval = eval_set_number
@@ -643,94 +651,39 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
                 vis = False
                 previous_b_DLOs_vertices_traj, b_DLOs_vertices_traj, target_b_DLOs_vertices_traj, m_u0_traj = data
 
+                # Forward pass through the DEFT model for train_time_horizon timesteps
+                print(f"DEFT_train.py Line 647, starting iterative simulation")
+                traj_loss, total_loss = DEFT_sim_train.iterative_sim(
+                    train_time_horizon,
+                    b_DLOs_vertices_traj,
+                    previous_b_DLOs_vertices_traj,
+                    target_b_DLOs_vertices_traj,
+                    loss_func,
+                    dt,
+                    parent_theta_clamp,
+                    child1_theta_clamp,
+                    child2_theta_clamp,
+                    inference_1_batch,
+                    vis_type=vis_type,
+                    vis=vis
+                )
 
+                # Record and print training loss
+                training_losses.append(traj_loss.cpu().detach().numpy() / train_time_horizon)
+                training_epochs.append(training_iteration)
 
-                with torch.profiler.profile(
-                        activities=[
-                            torch.profiler.ProfilerActivity.CPU
-
-                        ],
-                        record_shapes=False,  # Record input shapes for operators
-                        profile_memory=False,  # Track memory usage
-                        with_stack=True,  # Record call stack for detailed insights
-                ) as prof:
-                    # Forward pass through the DEFT model for train_time_horizon timesteps
-                    # t2 = time.time()
-                    traj_loss, total_loss = DEFT_sim_train.iterative_sim(
-                        train_time_horizon,
-                        b_DLOs_vertices_traj,
-                        previous_b_DLOs_vertices_traj,
-                        target_b_DLOs_vertices_traj,
-                        loss_func,
-                        dt,
-                        parent_theta_clamp,
-                        child1_theta_clamp,
-                        child2_theta_clamp,
-                        inference_1_batch,
-                        vis_type=vis_type,
-                        vis=vis
-                    )
-
-
-
-                    #
-                    # t0 = time.time()
-                    #
-                    # DEFT_sim_train.reset(
-                    #     b_DLOs_vertices_traj,
-                    #     previous_b_DLOs_vertices_traj,
-                    #     target_b_DLOs_vertices_traj,
-                    #     loss_func,
-                    #     dt,
-                    #     parent_theta_clamp,
-                    #     child1_theta_clamp,
-                    #     child2_theta_clamp,
-                    #     inference_1_batch,
-                    #     vis_type=vis_type,
-                    #     vis=vis
-                    # )
-                    # t1 = time.time()
-                    # print("reset time: ", t1-t0)
-                    #
-                    # frame_num_per_step = 1
-                    # total_step_num = 1
-                    # sum_traj_loss = 0.0
-                    # sum_total_loss = 0.0
-                    #
-                    # for step in range(total_step_num):
-                    #
-                    #     traj_loss, total_loss = DEFT_sim_train.step(
-                    #         frame_num_per_step,
-                    #         step
-                    #     )
-                    #     sum_traj_loss += traj_loss
-                    #     sum_total_loss += total_loss
-                    #
-                    # t2 = time.time()
-                    # print("time for ", total_step_num, "steps: ", t2 - t1)
-
-                    # Record and print training loss
-                    # training_losses.append(sum_traj_loss.cpu().detach().numpy() / train_time_horizon)
-                    training_losses.append(traj_loss.cpu().detach().numpy() / train_time_horizon)
-                    training_epochs.append(training_iteration)
-
-                    # Backprop through the total loss
-                    # sum_total_loss.backward(retain_graph=True)
-                    total_loss.backward(retain_graph=True)
-                    optimizer.step()
-                    optimizer.zero_grad()
-                print(prof.key_averages().table(sort_by="cuda_time_total", row_limit=10))
-                prof.export_chrome_trace("iterative_sim_trace.json")
-                print('generated json file')
-
-
+                # Backprop through the total loss
+                total_loss.backward(retain_graph=True)
+                optimizer.step()
+                optimizer.zero_grad()
 
                 # Save training losses to pickle
                 save_pickle(training_losses,
                             "training_record/train_%s_loss_DEFT_%s_%s.pkl" % (clamp_type, training_case, BDLO_type))
                 save_pickle(training_epochs,
                             "training_record/train_%s_step_DEFT_%s_%s.pkl" % (clamp_type, training_case, BDLO_type))
-
+            print(f"the training is finished for epoch {epoch}")
+            break
 
 if __name__ == "__main__":
     # Setting up a command-line interface for hyperparameters and options
@@ -758,7 +711,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=1)
+    parser.add_argument("--train_time_horizon", type=int, default=100)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
@@ -770,7 +723,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual_learning", type=bool, default=False)
 
     # Training batch size
-    parser.add_argument("--train_batch", type=int, default=32)
+    parser.add_argument("--train_batch", type=int, default=1)
 
     # Whether to visualize inference results (for debugging)
     parser.add_argument("--inference_vis", type=bool, default=False)

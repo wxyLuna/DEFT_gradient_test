@@ -25,7 +25,6 @@ import os
 import numpy as np
 sys.path.append(module_dir)
 from GNN_tree import BatchedGNNModel
-import gradient_saver
 
 import time
 
@@ -202,7 +201,6 @@ class DEFT_sim(nn.Module):
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(b_undeformed_vert.clone(), self.zero_mask)
         )
-        self.b_undeformed_vert = b_undeformed_vert.clone()
 
         # Create a mask to handle situations where child branches end sooner
         m_restRegionL_mask = torch.ones_like(self.m_restRegionL)
@@ -224,6 +222,9 @@ class DEFT_sim(nn.Module):
             twist_stiffness,
             device=device
         )
+        # print("DEFT_func initialized")
+        # print(f"the shape of twist_stiffness: {twist_stiffness.shape}")
+        # print(f"the value of twist_stiffness: {twist_stiffness}")
 
         # Apply the masks so that unused edges are 0
         self.m_restRegionL = self.m_restRegionL * m_restRegionL_mask
@@ -423,8 +424,6 @@ class DEFT_sim(nn.Module):
             selected_children_index
         )
 
-        self.bkgrad = gradient_saver.BackwardGradientIC(self.batch*self.n_branch,n_vert) # or n_branch * n_vert?
-
 
     def Rod_Init(self, batch, init_direction, m_restEdgeL, clamped_index, inference_1_batch):
         """
@@ -456,10 +455,7 @@ class DEFT_sim(nn.Module):
                 clamped_index,
                 self.inext_scale,
                 self.mass_scale,
-                self.zero_mask_num,
-                self.b_undeformed_vert,
-                self.bkgrad,
-                self.n_branch
+                self.zero_mask_num
             )
 
         # Compute edges for the (adjusted) undeformed shape
@@ -517,6 +513,16 @@ class DEFT_sim(nn.Module):
             m_restWnext,
             m_restRegionL
         )
+        # hessian_theta = self.DEFT_func.compute_dE2dTheta2(
+        #     m_m1,
+        #     m_m2,
+        #     m_kb,
+        #     m_theta,
+        #     self.JB_n,
+        #     m_restWprev,
+        #     m_restWnext,
+        #     m_restRegionL
+        # )
 
         # b_w1, b_w2 are the material curvature vectors for edges
         b_w1 = (
@@ -759,6 +765,8 @@ class DEFT_sim(nn.Module):
         parent_control_theta = theta_full[selected_parent_index][:, parent_theta_clamp]
 
         # Update the DEFT model state (curvature, bishop frames, etc.)
+        # Inside updateCurrentState(), theta_full is optimized to minimize the energy, e.g. dE/dtheta = 0
+        # Note: with the optimized theta_full, material frame m1 and m2 are also updated!!!!!!
         theta_full, material_m1, material_m2, m_kb = self.DEFT_func.updateCurrentState(
             current_vert,
             m_u0,
@@ -776,6 +784,8 @@ class DEFT_sim(nn.Module):
             parent_theta_clamp,
             inference_1_batch
         )
+
+        # check the value of analytical gradient of theta_star w.r.t. bending and twist stiffness
 
         # Compute internal forces
         Internal_force = self.Internal_Force_Vectorize(
@@ -905,7 +915,9 @@ class DEFT_sim(nn.Module):
         )
 
         # Main loop over timesteps
-        for ith in range(time_horizon):
+        # for ith in range(time_horizon):
+        for ith  in range(58): # mannual set a small number for shape checking
+            print(f"Iteration {ith + 1}/{58}...")
             # 1) Retrieve current/previous BDLO states
             if ith == 0:
                 b_DLOs_vertices = b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
@@ -1208,7 +1220,7 @@ class DEFT_sim(nn.Module):
                     )
 
                     # Finally, general inextensibility constraints along each branch
-                    b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                         self.batch,
                         b_DLOs_vertices,
                         self.batched_m_restEdgeL,
@@ -1216,18 +1228,8 @@ class DEFT_sim(nn.Module):
                         self.clamped_index,
                         self.inext_scale,
                         self.mass_scale,
-                        self.zero_mask_num,
-                        self.b_undeformed_vert,
-                        self.bkgrad,
-                        self.n_branch
+                        self.zero_mask_num
                     )
-
-                    self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
-                    self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
-                    self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
-                    print('grad_DX_X',self.bkgrad.grad_DX_X)
-                    print('grad_DX_Xinit',self.bkgrad.grad_DX_Xinit)
-                    print('grad_DX_M',self.bkgrad.grad_DX_M)
 
             # 6) Update velocities based on final positions + compute losses
             b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
@@ -1294,8 +1296,10 @@ class DEFT_sim(nn.Module):
         # Return the accumulated losses
         return traj_loss_eval, total_loss
 
-    def reset(
+
+    def iterative_sim_DER_only(
         self,
+        time_horizon,
         b_DLOs_vertices_traj,
         previous_b_DLOs_vertices_traj,
         target_b_DLOs_vertices_traj,
@@ -1308,63 +1312,85 @@ class DEFT_sim(nn.Module):
         vis_type,
         vis=False,
     ):
+        """
+        Perform iterative simulation for 'time_horizon' steps, updating positions and velocities at each step.
+        Also, apply GNN-based residual corrections and enforce constraints.
+
+        Parameters:
+        -----------
+        time_horizon: int
+            Number of timesteps to simulate forward.
+        b_DLOs_vertices_traj: tensor
+            The current BDLO trajectory data (positions).
+        previous_b_DLOs_vertices_traj: tensor
+            BDLO vertices from the previous timeframe (needed for velocity or continuity).
+        target_b_DLOs_vertices_traj: tensor
+            Ground truth reference positions for computing loss.
+        loss_func: callable
+            A PyTorch loss function, e.g. MSELoss.
+        dt: float
+            Timestep size.
+        parent_theta_clamp / child1_theta_clamp / child2_theta_clamp:
+            Indices for controlling which twist angles are clamped in parent/child branches.
+        inference_1_batch: bool
+            If True, uses the numba-based single-batch approach for constraints.
+        vis_type: str
+            Descriptor string used for naming plots or debugging visuals.
+        vis: bool
+            Whether or not to visualize each timestep.
+
+        Returns:
+        --------
+        traj_loss_eval: float
+            Accumulated position loss over all timesteps.
+        total_loss: float
+            Accumulated total loss (position + velocity) over all timesteps.
+        """
         # Number of constraint solution iterations per timestep
-        self._constraint_loop = 20
-
-        # time step size
-        self._dt = dt
-
-        # wtf
-        self._b_DLOs_vertices_traj = b_DLOs_vertices_traj
-        self._target_b_DLOs_vertices_traj = target_b_DLOs_vertices_traj
-        self._loss_func = loss_func
-        self._inference_1_batch = inference_1_batch
-        self._parent_theta_clamp = parent_theta_clamp
-        self._vis_type = vis_type
-        self._vis = vis
+        constraint_loop = 20
 
         # Prepare input to GNN
-        self._inputs = torch.zeros_like(self._target_b_DLOs_vertices_traj)
+        inputs = torch.zeros_like(target_b_DLOs_vertices_traj)
 
         # If branches are clamped, copy the ground-truth clamp positions
-        self._parent_fix_point = None
-        self._child1_fix_point = None
-        self._child2_fix_point = None
+        parent_fix_point = None
+        child1_fix_point = None
+        child2_fix_point = None
 
         if self.clamp_parent:
-            self._parent_fix_point = self._target_b_DLOs_vertices_traj[:, :, 0, self.parent_clamped_selection]
-            self._inputs[:, :, 0, self.parent_clamped_selection] = self._parent_fix_point
+            parent_fix_point = target_b_DLOs_vertices_traj[:, :, 0, self.parent_clamped_selection]
+            inputs[:, :, 0, self.parent_clamped_selection] = parent_fix_point
 
         if self.clamp_child1:
-            self._child1_fix_point = self._target_b_DLOs_vertices_traj[:, :, 1, self.child1_clamped_selection]
-            self._inputs[:, :, 1, self.child1_clamped_selection] = self._child1_fix_point
+            child1_fix_point = target_b_DLOs_vertices_traj[:, :, 1, self.child1_clamped_selection]
+            inputs[:, :, 1, self.child1_clamped_selection] = child1_fix_point
 
         if self.clamp_child2:
-            self._child2_fix_point = self._target_b_DLOs_vertices_traj[:, :, 2, self.child2_clamped_selection]
-            self._inputs[:, :, 2, self.child2_clamped_selection] = self._child2_fix_point
-        
+            child2_fix_point = target_b_DLOs_vertices_traj[:, :, 2, self.child2_clamped_selection]
+            inputs[:, :, 2, self.child2_clamped_selection] = child2_fix_point
+
         # Initialize accumulators for losses
-        self.traj_loss_eval = 0.0
-        self.total_loss = 0.0
+        traj_loss_eval = 0.0
+        total_loss = 0.0
 
         # Initialize orientation/twist states
-        self._parent_rod_orientation = None
-        self._children_rod_orientation = None
-        self._theta_full = None
-        self._optimization_mask = None
+        parent_rod_orientation = None
+        children_rod_orientation = None
+        theta_full = None
+        optimization_mask = None
 
         # For parent-child constraints iteration
-        self._previous_parent_vertices_iteration_edge1 = None
-        self._previous_parent_vertices_iteration_edge2 = None
-        self._previous_children_vertices_iteration_edge = None
+        previous_parent_vertices_iteration_edge1 = None
+        previous_parent_vertices_iteration_edge2 = None
+        previous_children_vertices_iteration_edge = None
 
         # For storing the updated states after each iteration
-        self._b_DLOs_vertices_old = None
-        self._b_DLOs_velocity = None
-        self._m_u0 = None
+        b_DLOs_vertices_old = None
+        b_DLOs_velocity = None
+        m_u0 = None
 
         # Precompute zero mask repeated for the batch
-        self._zero_mask_batched = self.zero_mask.repeat(self.batch, 1)
+        zero_mask_batched = self.zero_mask.repeat(self.batch, 1)
 
         # Initialize bishop frames for the first time
         self.m_restWprev, self.m_restWnext = self.Rod_Init(
@@ -1374,155 +1400,137 @@ class DEFT_sim(nn.Module):
                 .repeat(self.batch, self.n_branch, 1, 1),
             self.batched_m_restEdgeL,
             torch.zeros_like(self.clamped_index),
-            self._inference_1_batch
+            inference_1_batch
         )
 
-        # 1) Retrieve current/previous BDLO states
-        self._b_DLOs_vertices = self._b_DLOs_vertices_traj[:, 0].reshape(-1, self.n_vert, 3)
-        prev_b_DLOs_vertices = previous_b_DLOs_vertices_traj[:, 0].reshape(-1, self.n_vert, 3)
-
-        # 2) Initialize or parallel transport the material-frame directions m_u0
-        rest_edges = computeEdges(self._b_DLOs_vertices, self._zero_mask_batched)
-        init_direction = torch.tensor([[0.0, 0.6, 0.8], [0.0, 0.0, 1.0]]) \
-            .unsqueeze(dim=0) \
-            .repeat(self.n_branch, 1, 1)
-        self._m_u0 = self.DEFT_func.compute_u0(
-            rest_edges[:, 0],
-            init_direction.repeat(self.batch, 1, 1)[:, 0]
-        )
-
-        # Initialize rod orientation for parent + children
-        parent_rod_axis_angle = torch.zeros(1, 3)
-        self._parent_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
-            parent_rod_axis_angle
-        ).unsqueeze(dim=0).repeat(self.batch, self.n_vert - 1, 1)
-
-        child_rod_axis_angle = torch.zeros(1, 3)
-        self._children_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
-            child_rod_axis_angle
-        ).unsqueeze(dim=0).repeat(self.batch, len(self.rigid_body_coupling_index), 1)
-
-        # Initialize twist angles along the branches
-        rigid_body_orientation_axis_angle = pytorch3d.transforms.rotation_conversions \
-            .quaternion_to_axis_angle(self._parent_rod_orientation[:, self.fused_rigid_body_coupling_index]) \
-            .view(-1, 2, 3)
-        angles = torch.norm(rigid_body_orientation_axis_angle, dim=2) + 1e-20
-        axes = rigid_body_orientation_axis_angle / angles.unsqueeze(2)
-        children_axis = torch.nn.functional.normalize(
-            self._b_DLOs_vertices[self.selected_children_index, 1] - self._b_DLOs_vertices[self.selected_children_index, 0],
-            dim=1
-        ).unsqueeze(dim=1).repeat(1, 2, 1)
-        children_rotation_angles = ((children_axis * axes).sum(-1) * angles).sum(-1)
-
-        # Build theta_full and an optimization_mask
-        self._theta_full = torch.zeros(self.batch * self.n_branch, self.n_vert - 1)
-        self._theta_full[self.selected_children_index, 0] = children_rotation_angles
-
-        self._optimization_mask = 1 - torch.zeros_like(self._theta_full).unsqueeze(1)
-
-        # Apply clamp for the parent branch angles
-        if self.clamp_parent:
-            for p_idx in self._parent_theta_clamp:
-                self._optimization_mask[self.selected_parent_index, :, int(p_idx)] = 0
-
-        # The first child edge is zero => no update
-        self._optimization_mask[self.selected_children_index, :, 0] = 0
-
-        # Child1 clamp
-        if self.clamp_child1:
-            self._optimization_mask[self.selected_child1_index, :, child1_theta_clamp] = 0
-
-        # Child2 clamp
-        if self.clamp_child2:
-            self._optimization_mask[self.selected_child2_index, :, child2_theta_clamp] = 0
-
-        # 3) DEFT forward pass to get total forces + updated twist angles
-        # Initialize velocity (from difference) for the first frame
-        self._b_DLOs_velocity = (self._b_DLOs_vertices - prev_b_DLOs_vertices) / self._dt
-
-        # 5) Constraints Enforcement (rotational and inextensibility)
-        self._previous_parent_vertices_iteration_edge1 = self._b_DLOs_vertices[self.selected_parent_index].clone()
-        self._previous_parent_vertices_iteration_edge2 = self._b_DLOs_vertices[self.selected_parent_index].clone()
-        self._previous_children_vertices_iteration_edge = self._b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3).clone()
-
-        if self._inference_1_batch:
-            self._previous_parent_vertices_iteration_edge1 = self._previous_parent_vertices_iteration_edge1.detach().cpu().numpy().copy()
-            self._previous_parent_vertices_iteration_edge2 = self._previous_parent_vertices_iteration_edge2.detach().cpu().numpy().copy()
-            self._previous_children_vertices_iteration_edge = self._previous_children_vertices_iteration_edge.detach().cpu().numpy().copy()
-
-        self._b_DLOs_vertices_old = self._b_DLOs_vertices
-
-        return
-
-    def step(
-        self,
-        num_frames,
-        idx_start_frame,
-    ):
-        # self._b_DLOs_vertices = self._b_DLOs_vertices.detach()
-        # self._b_DLOs_velocity = self._b_DLOs_velocity.detach()
-        # self._b_DLOs_vertices_old = self._b_DLOs_vertices_old.detach()
-        for ith in range(num_frames):
+        # Main loop over timesteps
+        # for ith in range(time_horizon):
+        for ith  in range(2): # mannual set a small number for shape checking
+            print(f"Iteration {ith + 1}/{2}...")
             # 1) Retrieve current/previous BDLO states
-            prev_b_DLOs_vertices = self._b_DLOs_vertices_old.clone()
+            if ith == 0:
+                b_DLOs_vertices = b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
+                prev_b_DLOs_vertices = previous_b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
+            else:
+                prev_b_DLOs_vertices = b_DLOs_vertices_old.clone()
 
             # 2) Initialize or parallel transport the material-frame directions m_u0
-            # Parallel transport bishop frames
-            previous_edge = computeEdges(prev_b_DLOs_vertices, self._zero_mask_batched)
-            current_edge = computeEdges(self._b_DLOs_vertices, self._zero_mask_batched)
-            self._m_u0 = self.DEFT_func.parallelTransportFrame(
-                previous_edge[:, 0],
-                current_edge[:, 0],
-                self._m_u0
-            )
+            if ith == 0:
+                rest_edges = computeEdges(b_DLOs_vertices, zero_mask_batched)
+                init_direction = torch.tensor([[0.0, 0.6, 0.8], [0.0, 0.0, 1.0]]) \
+                    .unsqueeze(dim=0) \
+                    .repeat(self.n_branch, 1, 1)
+                m_u0 = self.DEFT_func.compute_u0(
+                    rest_edges[:, 0],
+                    init_direction.repeat(self.batch, 1, 1)[:, 0]
+                )
 
-            # Update children rotation angles
-            rigid_body_orientation_axis_angle = pytorch3d.transforms.rotation_conversions \
-                .quaternion_to_axis_angle(
-                    self._parent_rod_orientation[:, self.fused_rigid_body_coupling_index]
-                ).view(-1, 2, 3)
-            angles = torch.norm(rigid_body_orientation_axis_angle, dim=2) + 1e-20
-            axes = rigid_body_orientation_axis_angle / angles.unsqueeze(2)
-            children_axis = torch.nn.functional.normalize(
-                self._b_DLOs_vertices[self.selected_children_index, 1] - self._b_DLOs_vertices[self.selected_children_index, 0],
-                dim=1
-            ).unsqueeze(dim=1).repeat(1, 2, 1)
-            children_rotation_angles = ((children_axis * axes).sum(-1) * angles).sum(-1)
-            self._theta_full[self.selected_children_index, 0] = children_rotation_angles
+                # Initialize rod orientation for parent + children
+                parent_rod_axis_angle = torch.zeros(1, 3)
+                parent_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
+                    parent_rod_axis_angle
+                ).unsqueeze(dim=0).repeat(self.batch, self.n_vert - 1, 1)
+
+                child_rod_axis_angle = torch.zeros(1, 3)
+                children_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
+                    child_rod_axis_angle
+                ).unsqueeze(dim=0).repeat(self.batch, len(self.rigid_body_coupling_index), 1)
+
+                # Initialize twist angles along the branches
+                rigid_body_orientation_axis_angle = pytorch3d.transforms.rotation_conversions \
+                    .quaternion_to_axis_angle(parent_rod_orientation[:, self.fused_rigid_body_coupling_index]) \
+                    .view(-1, 2, 3)
+                angles = torch.norm(rigid_body_orientation_axis_angle, dim=2) + 1e-20
+                axes = rigid_body_orientation_axis_angle / angles.unsqueeze(2)
+                children_axis = torch.nn.functional.normalize(
+                    b_DLOs_vertices[self.selected_children_index, 1] - b_DLOs_vertices[self.selected_children_index, 0],
+                    dim=1
+                ).unsqueeze(dim=1).repeat(1, 2, 1)
+                children_rotation_angles = ((children_axis * axes).sum(-1) * angles).sum(-1)
+
+                # Build theta_full and an optimization_mask
+                theta_full = torch.zeros(self.batch * self.n_branch, self.n_vert - 1)
+                theta_full[self.selected_children_index, 0] = children_rotation_angles
+
+                optimization_mask = 1 - torch.zeros_like(theta_full).unsqueeze(1)
+
+                # Apply clamp for the parent branch angles
+                if self.clamp_parent:
+                    for p_idx in parent_theta_clamp:
+                        optimization_mask[self.selected_parent_index, :, int(p_idx)] = 0
+
+                # The first child edge is zero => no update
+                optimization_mask[self.selected_children_index, :, 0] = 0
+
+                # Child1 clamp
+                if self.clamp_child1:
+                    optimization_mask[self.selected_child1_index, :, child1_theta_clamp] = 0
+
+                # Child2 clamp
+                if self.clamp_child2:
+                    optimization_mask[self.selected_child2_index, :, child2_theta_clamp] = 0
+
+            else:
+                # Parallel transport bishop frames
+                previous_edge = computeEdges(prev_b_DLOs_vertices, zero_mask_batched)
+                current_edge = computeEdges(b_DLOs_vertices, zero_mask_batched)
+                m_u0 = self.DEFT_func.parallelTransportFrame(
+                    previous_edge[:, 0],
+                    current_edge[:, 0],
+                    m_u0
+                )
+
+                # Update children rotation angles
+                rigid_body_orientation_axis_angle = pytorch3d.transforms.rotation_conversions \
+                    .quaternion_to_axis_angle(
+                        parent_rod_orientation[:, self.fused_rigid_body_coupling_index]
+                    ).view(-1, 2, 3)
+                angles = torch.norm(rigid_body_orientation_axis_angle, dim=2) + 1e-20
+                axes = rigid_body_orientation_axis_angle / angles.unsqueeze(2)
+                children_axis = torch.nn.functional.normalize(
+                    b_DLOs_vertices[self.selected_children_index, 1] - b_DLOs_vertices[self.selected_children_index, 0],
+                    dim=1
+                ).unsqueeze(dim=1).repeat(1, 2, 1)
+                children_rotation_angles = ((children_axis * axes).sum(-1) * angles).sum(-1)
+                theta_full[self.selected_children_index, 0] = children_rotation_angles
 
             # 3) DEFT forward pass to get total forces + updated twist angles
-            Total_force, self._theta_full = self.branch_forward(
-                self._b_DLOs_vertices,
+            Total_force, theta_full = self.branch_forward(
+                b_DLOs_vertices,
                 torch.tensor([[0.0, 0.6, 0.8], [0.0, 0.0, 1.0]])
                     .unsqueeze(dim=0)
                     .repeat(self.batch, self.n_branch, 1, 1),
                 self.clamped_index,
-                self._m_u0,
-                self._theta_full,
-                -children_rotation_angles,
+                m_u0,
+                theta_full,
+                -children_rotation_angles if ith > 0 else -children_rotation_angles,
                 self.selected_parent_index,
                 self.selected_children_index,
-                self._parent_theta_clamp,
-                self._optimization_mask,
-                self._inference_1_batch
+                parent_theta_clamp,
+                optimization_mask,
+                inference_1_batch
             )
 
+            # Initialize velocity (from difference) for the first frame
+            if ith == 0:
+                b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices) / dt
+
             # Perform numerical integration
-            prev_b_DLOs_vertices_copy = self._b_DLOs_vertices.clone()
-            self._b_DLOs_vertices, self._b_DLOs_velocity = self.Numerical_Integration(
+            prev_b_DLOs_vertices_copy = b_DLOs_vertices.clone()
+            b_DLOs_vertices, b_DLOs_velocity = self.Numerical_Integration(
                 self.mass_matrix,
                 Total_force,
-                self._b_DLOs_velocity,
-                self._b_DLOs_vertices,
+                b_DLOs_velocity,
+                b_DLOs_vertices,
                 self.damping,
                 self.integration_ratio,
-                self._dt
+                dt
             )
 
             # 4) GNN-based residual correction
-            current_input = self._inputs[:, idx_start_frame+ith].reshape(self.batch, -1, 3)
+            current_input = inputs[:, ith].reshape(self.batch, -1, 3)
             gnn_input = torch.cat([
-                self._b_DLOs_vertices.view(self.batch, -1, 3),
+                b_DLOs_vertices.view(self.batch, -1, 3),
                 prev_b_DLOs_vertices.view(self.batch, -1, 3),
                 current_input,
                 self.nn_previous_bend_stiffness,
@@ -1532,34 +1540,44 @@ class DEFT_sim(nn.Module):
                 self.undeformed_vert.unsqueeze(0).repeat(self.batch, 1, 1, 1).view(self.batch, -1, 3),
             ], dim=-1)
 
-            delta_b_DLOs_vertices = self.GNN_tree.inference(gnn_input, current_input) * self.learning_weight * self._dt
+            delta_b_DLOs_vertices = self.GNN_tree.inference(gnn_input, current_input) * self.learning_weight * dt
             delta_b_DLOs_vertices = delta_b_DLOs_vertices.view(-1, self.n_vert, 3)
 
             # Enforce clamp constraints on the GNN delta
             if self.clamp_parent:
-                parent_fix = self._parent_fix_point[:, idx_start_frame+ith].reshape(-1, 3)
-                self._b_DLOs_vertices[self.batch_indices_flat, self.parent_indices_flat] = parent_fix
+                parent_fix = parent_fix_point[:, ith].reshape(-1, 3)
+                b_DLOs_vertices[self.batch_indices_flat, self.parent_indices_flat] = parent_fix
                 delta_b_DLOs_vertices[self.batch_indices_flat, self.parent_indices_flat] = 0
 
             if self.clamp_child1:
-                c1_fix = self._child1_fix_point[:, idx_start_frame+ith].reshape(-1, 3)
-                self._b_DLOs_vertices[self.batch_child1_indices_flat, self.child1_indices_flat] = c1_fix
+                c1_fix = child1_fix_point[:, ith].reshape(-1, 3)
+                b_DLOs_vertices[self.batch_child1_indices_flat, self.child1_indices_flat] = c1_fix
                 delta_b_DLOs_vertices[self.batch_child1_indices_flat, self.child1_indices_flat] = 0
 
             if self.clamp_child2:
-                c2_fix = self._child2_fix_point[:, idx_start_frame+ith].reshape(-1, 3)
-                self._b_DLOs_vertices[self.batch_child2_indices_flat, self.child2_indices_flat] = c2_fix
+                c2_fix = child2_fix_point[:, ith].reshape(-1, 3)
+                b_DLOs_vertices[self.batch_child2_indices_flat, self.child2_indices_flat] = c2_fix
                 delta_b_DLOs_vertices[self.batch_child2_indices_flat, self.child2_indices_flat] = 0
 
             # Apply the GNN correction
-            self._b_DLOs_vertices = self._b_DLOs_vertices + delta_b_DLOs_vertices
+            b_DLOs_vertices = b_DLOs_vertices + delta_b_DLOs_vertices
 
             # 5) Constraints Enforcement (rotational and inextensibility)
-            if self._inference_1_batch:
-                parent_rod_orientation_np = self._parent_rod_orientation.detach().cpu().numpy().copy()
-                children_rod_orientation_np = self._children_rod_orientation.detach().cpu().numpy().copy()
+            if ith == 0:
+                previous_parent_vertices_iteration_edge1 = b_DLOs_vertices[self.selected_parent_index].clone()
+                previous_parent_vertices_iteration_edge2 = b_DLOs_vertices[self.selected_parent_index].clone()
+                previous_children_vertices_iteration_edge = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3).clone()
 
-                b_DLOs_vertices_np = self._b_DLOs_vertices.detach().cpu().numpy().copy()
+                if inference_1_batch:
+                    previous_parent_vertices_iteration_edge1 = previous_parent_vertices_iteration_edge1.detach().cpu().numpy().copy()
+                    previous_parent_vertices_iteration_edge2 = previous_parent_vertices_iteration_edge2.detach().cpu().numpy().copy()
+                    previous_children_vertices_iteration_edge = previous_children_vertices_iteration_edge.detach().cpu().numpy().copy()
+
+            if inference_1_batch:
+                parent_rod_orientation = parent_rod_orientation.detach().cpu().numpy().copy()
+                children_rod_orientation = children_rod_orientation.detach().cpu().numpy().copy()
+
+                b_DLOs_vertices = b_DLOs_vertices.detach().cpu().numpy().copy()
                 rotation_constraints_index1 = torch.linspace(0, (self.n_branch-1) * 2 - 2, len(self.rigid_body_coupling_index)).to(torch.int).detach().cpu().numpy().copy()
                 rotation_constraints_index2 = torch.linspace(1, ((self.n_branch-1) * 2 - 1), len(self.rigid_body_coupling_index)).to(torch.int).detach().cpu().numpy().copy()
                 parent_MOI_matrix_numpy = self.parent_MOI_matrix.detach().cpu().numpy().copy()
@@ -1572,19 +1590,19 @@ class DEFT_sim(nn.Module):
                 mass_scale_numpy = self.mass_scale.detach().cpu().numpy().copy()
 
                 # Repeatedly enforce rotation and inextensibility constraints
-                for constraint_loop_i in range(self._constraint_loop):
-                    parent_vertices = b_DLOs_vertices_np[self.selected_parent_index].reshape((self.batch, self.n_vert, 3))
-                    children_vertices = b_DLOs_vertices_np[self.selected_children_index].reshape((self.batch, -1, self.n_vert, 3))
+                for constraint_loop_i in range(constraint_loop):
+                    parent_vertices = b_DLOs_vertices[self.selected_parent_index].reshape((self.batch, self.n_vert, 3))
+                    children_vertices = b_DLOs_vertices[self.selected_children_index].reshape((self.batch, -1, self.n_vert, 3))
 
                     # Edge1
-                    parent_vertices, parent_rod_orientation_np, children_vertices, children_rod_orientation_np = \
+                    parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
                         constraints_numba.Rotation_Constraints_Enforcement_Parent_Children(
                             parent_vertices,
-                            parent_rod_orientation_np,
-                            self._previous_parent_vertices_iteration_edge1,
+                            parent_rod_orientation,
+                            previous_parent_vertices_iteration_edge1,
                             children_vertices,
-                            children_rod_orientation_np,
-                            self._previous_children_vertices_iteration_edge,
+                            children_rod_orientation,
+                            previous_children_vertices_iteration_edge,
                             parent_MOI_matrix_numpy,
                             children_MOI_matrix_numpy,
                             np.array(self.rigid_body_coupling_index) - 1,
@@ -1592,18 +1610,18 @@ class DEFT_sim(nn.Module):
                             momentum_scale_previous_numpy
                         )
 
-                    self._previous_parent_vertices_iteration_edge1 = parent_vertices.copy()
-                    self._previous_children_vertices_iteration_edge = children_vertices.copy()
+                    previous_parent_vertices_iteration_edge1 = parent_vertices.copy()
+                    previous_children_vertices_iteration_edge = children_vertices.copy()
 
                     # Edge2
-                    parent_vertices, parent_rod_orientation_np, children_vertices, children_rod_orientation_np = \
+                    parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
                         constraints_numba.Rotation_Constraints_Enforcement_Parent_Children(
                             parent_vertices,
-                            parent_rod_orientation_np,
-                            self._previous_parent_vertices_iteration_edge2,
+                            parent_rod_orientation,
+                            previous_parent_vertices_iteration_edge2,
                             children_vertices,
-                            children_rod_orientation_np,
-                            self._previous_children_vertices_iteration_edge,
+                            children_rod_orientation,
+                            previous_children_vertices_iteration_edge,
                             parent_MOI_matrix_numpy,
                             children_MOI_matrix_numpy,
                             np.array(self.rigid_body_coupling_index),
@@ -1611,12 +1629,12 @@ class DEFT_sim(nn.Module):
                             momentum_scale_next_numpy
                         )
 
-                    self._previous_parent_vertices_iteration_edge2 = parent_vertices.copy()
-                    self._previous_children_vertices_iteration_edge = children_vertices.copy()
+                    previous_parent_vertices_iteration_edge2 = parent_vertices.copy()
+                    previous_children_vertices_iteration_edge = children_vertices.copy()
 
                     # Coupling constraints among parent and child
                     children_vertices = children_vertices.reshape((-1, self.n_vert, 3))
-                    b_DLOs_vertices_np = constraints_numba.Inextensibility_Constraint_Enforcement_Coupling(
+                    b_DLOs_vertices = constraints_numba.Inextensibility_Constraint_Enforcement_Coupling(
                         parent_vertices,
                         children_vertices,
                         np.array(self.rigid_body_coupling_index),
@@ -1625,32 +1643,32 @@ class DEFT_sim(nn.Module):
                         self.selected_children_index
                     )
 
-                    b_DLOs_vertices_np = constraints_numba.Inextensibility_Constraint_Enforcement(
+                    b_DLOs_vertices = constraints_numba.Inextensibility_Constraint_Enforcement(
                         self.batch,
-                        b_DLOs_vertices_np,
+                        b_DLOs_vertices,
                         batched_m_restEdgeL_numpy,
                         inext_scale_numpy,
                         mass_scale_numpy,
                         self.zero_mask_num
                     )
 
-                self._b_DLOs_vertices = torch.from_numpy(b_DLOs_vertices_np)
-                self._parent_rod_orientation = torch.from_numpy(parent_rod_orientation_np)
-                self._children_rod_orientation = torch.from_numpy(children_rod_orientation_np)
+                b_DLOs_vertices = torch.from_numpy(b_DLOs_vertices)
+                parent_rod_orientation = torch.from_numpy(parent_rod_orientation)
+                children_rod_orientation = torch.from_numpy(children_rod_orientation)
             else:
-                for _ in range(self._constraint_loop):
-                    parent_vertices = self._b_DLOs_vertices[self.selected_parent_index]
-                    children_vertices = self._b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
+                for _ in range(constraint_loop):
+                    parent_vertices = b_DLOs_vertices[self.selected_parent_index]
+                    children_vertices = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
 
                     # Edge1
-                    parent_vertices, self._parent_rod_orientation, children_vertices, self._children_rod_orientation = \
+                    parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
                         self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
                             parent_vertices,
-                            self._parent_rod_orientation,
-                            self._previous_parent_vertices_iteration_edge1,
+                            parent_rod_orientation,
+                            previous_parent_vertices_iteration_edge1,
                             children_vertices,
-                            self._children_rod_orientation,
-                            self._previous_children_vertices_iteration_edge,
+                            children_rod_orientation,
+                            previous_children_vertices_iteration_edge,
                             self.parent_MOI_matrix,
                             self.children_MOI_matrix,
                             torch.tensor(self.rigid_body_coupling_index) - 1,
@@ -1658,30 +1676,30 @@ class DEFT_sim(nn.Module):
                             self.momentum_scale_previous
                         )
 
-                    self._previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
-                    self._previous_children_vertices_iteration_edge = children_vertices.clone()
+                    previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
+                    previous_children_vertices_iteration_edge = children_vertices.clone()
 
                     # Edge2
-                    parent_vertices, self._parent_rod_orientation, children_vertices, self._children_rod_orientation = \
+                    parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
                         self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
                             parent_vertices,
-                            self._parent_rod_orientation,
-                            self._previous_parent_vertices_iteration_edge2,
+                            parent_rod_orientation,
+                            previous_parent_vertices_iteration_edge2,
                             children_vertices,
-                            self._children_rod_orientation,
-                            self._previous_children_vertices_iteration_edge,
+                            children_rod_orientation,
+                            previous_children_vertices_iteration_edge,
                             self.parent_MOI_matrix,
                             self.children_MOI_matrix,
                             torch.tensor(self.rigid_body_coupling_index),
                             torch.linspace(1, (children_vertices.size(1) * 2 - 1), len(self.rigid_body_coupling_index)).to(torch.int),
                             self.momentum_scale_next
                         )
-                    self._previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
-                    self._previous_children_vertices_iteration_edge = children_vertices.clone()
+                    previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
+                    previous_children_vertices_iteration_edge = children_vertices.clone()
 
                     # Coupling constraints (parent <-> children rods)
                     children_vertices = children_vertices.view(-1, self.n_vert, 3)
-                    self._b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                    b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                         parent_vertices,
                         children_vertices,
                         self.rigid_body_coupling_index,
@@ -1691,9 +1709,9 @@ class DEFT_sim(nn.Module):
                     )
 
                     # Finally, general inextensibility constraints along each branch
-                    self._b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                         self.batch,
-                        self._b_DLOs_vertices,
+                        b_DLOs_vertices,
                         self.batched_m_restEdgeL,
                         self.mass_matrix,
                         self.clamped_index,
@@ -1703,65 +1721,66 @@ class DEFT_sim(nn.Module):
                     )
 
             # 6) Update velocities based on final positions + compute losses
-            self._b_DLOs_velocity = (self._b_DLOs_vertices - prev_b_DLOs_vertices_copy) / self._dt
+            b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
 
-            gt_vertices = self._target_b_DLOs_vertices_traj[:, idx_start_frame+ith].reshape(-1, self.n_vert, 3)
+            gt_vertices = target_b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
             gt_velocity = (
-                (self._target_b_DLOs_vertices_traj[:, idx_start_frame+ith] - self._b_DLOs_vertices_traj[:, idx_start_frame+ith]).view(-1, self.n_vert, 3) / self._dt
+                (target_b_DLOs_vertices_traj[:, ith] - b_DLOs_vertices_traj[:, ith]).view(-1, self.n_vert, 3) / dt
             )
 
             # Position and velocity loss
-            step_loss_pos = self._loss_func(self._b_DLOs_vertices, gt_vertices)
-            step_loss_vel = self._loss_func(self._b_DLOs_velocity, gt_velocity)
-            self.traj_loss_eval += step_loss_pos
-            self.total_loss += (step_loss_pos + step_loss_vel)
+            step_loss_pos = loss_func(gt_vertices, b_DLOs_vertices)
+            step_loss_vel = loss_func(b_DLOs_velocity, gt_velocity)
+            traj_loss_eval += step_loss_pos
+            total_loss += (step_loss_pos + step_loss_vel)
 
             # Visualization if requested
-            if self._vis:
+            if vis:
                 vis_batch = self.batch  # how many samples we visualize
                 for i_eval_batch in range(vis_batch):
-                    parent_vertices_traj_vis = self._target_b_DLOs_vertices_traj[i_eval_batch][:, 0]
-                    child1_vertices_traj_vis = self._target_b_DLOs_vertices_traj[i_eval_batch][:, 1]
-                    child2_vertices_traj_vis = self._target_b_DLOs_vertices_traj[i_eval_batch][:, 2]
+                    parent_vertices_traj_vis = target_b_DLOs_vertices_traj[i_eval_batch][:, 0]
+                    child1_vertices_traj_vis = target_b_DLOs_vertices_traj[i_eval_batch][:, 1]
+                    child2_vertices_traj_vis = target_b_DLOs_vertices_traj[i_eval_batch][:, 2]
 
                     child1_vertices_vis = torch.cat(
                         (
-                            parent_vertices_traj_vis[idx_start_frame+ith, self.rigid_body_coupling_index[0]].unsqueeze(0),
-                            child1_vertices_traj_vis[idx_start_frame+ith]
+                            parent_vertices_traj_vis[ith, self.rigid_body_coupling_index[0]].unsqueeze(0),
+                            child1_vertices_traj_vis[ith]
                         ),
                         dim=0
                     )
                     child2_vertices_vis = torch.cat(
                         (
-                            parent_vertices_traj_vis[idx_start_frame+ith, self.rigid_body_coupling_index[1]].unsqueeze(0),
-                            child2_vertices_traj_vis[idx_start_frame+ith]
+                            parent_vertices_traj_vis[ith, self.rigid_body_coupling_index[1]].unsqueeze(0),
+                            child2_vertices_traj_vis[ith]
                         ),
                         dim=0
                     )
 
-                    parent_vertices_pred = self._b_DLOs_vertices[self.selected_parent_index]
-                    children_vertices_pred = self._b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, 3)
+                    parent_vertices_pred = b_DLOs_vertices[self.selected_parent_index]
+                    children_vertices_pred = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, 3)
 
                     visualize_tensors_3d_in_same_plot_no_zeros(
                         self.parent_clamped_selection,
                         parent_vertices_pred[i_eval_batch],
                         children_vertices_pred[i_eval_batch],
-                        idx_start_frame+ith,
+                        ith,
                         0,
                         self.clamp_parent,
                         self.clamp_child1,
                         self.clamp_child2,
-                        self._parent_fix_point[:, idx_start_frame+ith].reshape(-1, 3) if self.clamp_parent else None,
-                        self._child1_fix_point[:, idx_start_frame+ith].reshape(-1, 3) if self.clamp_child1 else None,
-                        self._child2_fix_point[:, idx_start_frame+ith].reshape(-1, 3) if self.clamp_child2 else None,
-                        parent_vertices_traj_vis[idx_start_frame+ith],
+                        parent_fix_point[:, ith].reshape(-1, 3) if self.clamp_parent else None,
+                        child1_fix_point[:, ith].reshape(-1, 3) if self.clamp_child1 else None,
+                        child2_fix_point[:, ith].reshape(-1, 3) if self.clamp_child2 else None,
+                        parent_vertices_traj_vis[ith],
                         child1_vertices_vis,
                         child2_vertices_vis,
                         i_eval_batch,
-                        self._vis_type
+                        vis_type
                     )
 
             # Save updated positions for the next iteration
-            self._b_DLOs_vertices_old = self._b_DLOs_vertices.clone()
-        
-        return self.traj_loss_eval, self.total_loss
+            b_DLOs_vertices_old = b_DLOs_vertices.clone()
+
+        # Return the accumulated losses
+        return traj_loss_eval, total_loss
