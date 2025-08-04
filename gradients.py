@@ -288,3 +288,80 @@ def grad_DX_IR_batch(dt, b_DLOs_velocity, mass_matrix, force, damping):
     grad_DX_IR = vel_shrinked * dt_np
 
     return grad_DX_IR
+
+def grad_DX_M_Coupling_batch(M_pc, M_cc, X_pc, X_cc):
+    """
+    Batch version of Gradient of the coupling constraint iterative function with respect to the mass matrices M_0 and M_1.
+
+    # Inputs:
+    - M_pc: [batch_size, 3, 3] coupling mass matrix of parent branch coupling vertex
+    - M_cc: [batch_size, 3, 3] coupling mass matrix of children branch coupling vertex
+    - X_pc: [batch_size, 3, 1] position of parent branch coupling vertex
+    - X_cc: [batch_size, 3, 1] position of children branch coupling vertex
+
+    # Outputs:
+    - grad_M_pc_pc: [batch_size, 3, 1] gradient of DX_pc with respect to M_pc
+    - grad_M_pc_cc: [batch_size, 3, 1] gradient of DX_pc with respect to M_cc
+    - grad_M_cc_pc: [batch_size, 3, 1] gradient of DX_cc with respect to M_pc
+    - grad_M_cc_cc: [batch_size, 3, 1] gradient of DX_cc with respect to M_cc
+
+    - grad_DX_M_Coupling:[batch_size, 6, 2] gradient of DX_M_Coupling with respect to M_pc and M_cc
+
+    """
+
+    batch_size = M_pc.shape[0]
+    M_pc = M_pc.detach().cpu().numpy()
+    M_cc = M_cc.detach().cpu().numpy()
+    X_pc = X_pc.detach().cpu().numpy()
+    X_cc = X_cc.detach().cpu().numpy()
+
+    inv = np.linalg.inv(M_pc + M_cc)
+    grad_M_pc_pc = - M_cc @ inv @ inv @ (X_cc - X_pc)
+    grad_M_pc_cc = (1-M_cc @ inv) @ inv @ (X_cc - X_pc)
+    grad_M_cc_pc = (1-M_pc @ inv) @ inv @ (X_cc - X_pc)
+    grad_M_cc_cc = M_pc @ inv @ inv @ (X_cc - X_pc)
+
+    grad_DX_M_Coupling = np.concatenate(
+        (np.concatenate((grad_M_pc_pc, grad_M_pc_cc), axis=2),
+         np.concatenate((grad_M_cc_pc, grad_M_cc_cc), axis=2)),
+        axis=1
+    )
+    return grad_DX_M_Coupling
+
+def grad_DX_X_Coupling_batch(M_pc, M_cc):
+    """
+    Batch version of Gradient of the coupling constraint iterative function with respect to the positions X_pc and X_cc.
+
+    # Inputs:
+    - M_pc: [batch_size, 3, 3] coupling mass matrix of parent branch coupling vertex
+    - M_cc: [batch_size, 3, 3] coupling mass matrix of children branch coupling vertex
+
+    # Outputs:
+    - grad_X_pc_pc: [batch_size, 3, 3] gradient of DX_pc with respect to X_pc
+    - grad_X_pc_cc: [batch_size, 3, 3] gradient of DX_pc with respect to X_cc
+    - grad_X_cc_pc: [batch_size, 3, 3] gradient of DX_cc with respect to X_pc
+    - grad_X_cc_cc: [batch_size, 3, 3] gradient of DX_cc with respect to X_cc
+
+    - grad_DX_X_Coupling: [batch_size, 6, 6] gradient of DX_X_Coupling with respect to X_pc and X_cc
+
+    """
+
+    batch_size = M_pc.shape[0]
+    M_pc = M_pc.detach().cpu().numpy()
+    M_cc = M_cc.detach().cpu().numpy()
+
+    inv = np.linalg.inv(M_pc + M_cc)
+
+    grad_X_pc_pc = - M_cc @ inv
+    grad_X_pc_cc = M_cc @ inv
+    grad_X_cc_pc = M_pc @ inv
+    grad_X_cc_cc = -M_pc @ inv
+
+    grad_DX_X_Coupling = np.concatenate(
+        (np.concatenate((grad_X_pc_pc, grad_X_pc_cc), axis=2),
+         np.concatenate((grad_X_cc_pc, grad_X_cc_cc), axis=2)),
+        axis=1
+    )
+
+    return grad_DX_X_Coupling
+

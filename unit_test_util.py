@@ -1,57 +1,40 @@
 import torch
 from torch.utils.data import Dataset
-import torch.nn.functional as F
 import matplotlib.pyplot as plt
-import numpy as np
-from pathlib import Path
-from Unit_test_sim import Unit_test_sim
-
 import os
 
 
 
 
 class TrainSimpleTrajData(Dataset):
-    def __init__(self, undeformed_vert, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
+    def __init__(self, undeformed_vert, eval_time_horizon, total_time, n_samples, dt, device="cpu",sim=None, plotting=False):
         super().__init__()
         # sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
         self.device = device
-        self.time_horizon = time_horizon
-
         self.prev_traj = []
         self.curr_traj = []
         self.targ_traj = []
         self.global_idx = 0
-        self.undeformed_vert = undeformed_vert.detach().clone()
 
         for _ in range(n_samples):
 
             full_traj = sim.generate_preX_trajectory(total_time, dt)
             # generate sliding window segments
-            for i in range(total_time - 2 - time_horizon):
-                prev = full_traj[i: i + time_horizon]
-                curr = full_traj[i + 1: i + 1 + time_horizon]
-                targ = full_traj[i + 2: i + 2 + time_horizon]
+            # take only the window starting at i=0
+            prev = full_traj[0:0 + eval_time_horizon]  # [0 .. H-1]
+            curr = full_traj[1:1 + eval_time_horizon]  # [1 .. H]
+            targ = full_traj[2:2 + eval_time_horizon]  # [2 .. H+1]
 
-                self.prev_traj.append(prev)
-                self.curr_traj.append(curr)
-                self.targ_traj.append(targ)
+            self.prev_traj.append(prev)
+            self.curr_traj.append(curr)
+            self.targ_traj.append(targ)
 
 
-                self.global_idx += 1
+            self.global_idx += 1
 
         self.prev_traj = torch.stack(self.prev_traj)
         self.curr_traj = torch.stack(self.curr_traj)
         self.targ_traj = torch.stack(self.targ_traj)
-        self.save_trajectory_with_undeformed(
-            self.curr_traj,  # shape [,n_Sample, T, branch, V, 3]
-            self.undeformed_vert,
-            idx=self.global_idx,
-            save_dir="trajectory_plots",
-            title=f"Auto-Saved Trajectory Sample{self.global_idx}"
-        )
-
-
 
     def __len__(self):
         return self.curr_traj.shape[0]
@@ -61,48 +44,42 @@ class TrainSimpleTrajData(Dataset):
                 self.curr_traj[idx].clone().detach(),
                 self.targ_traj[idx].clone().detach())
 
-    def save_trajectory_with_undeformed(self,trajectory, undeformed_vert, idx=0, save_dir="trajectory_plots",
-                                        title="Trajectory Sample"):
+    def save_trajectory_with_undeformed(self, trajectory, undeformed_vert, idx=0, save_dir="trajectory_frames",
+                                        title="Trajectory Frame"):
         """
-        Save a trajectory sample with undeformed reference overlaid.
+        Save a sequence of trajectory snapshots (one per time step) with undeformed reference overlaid.
 
         Args:
-            trajectory: Tensor of shape [T, B, V, 3] (time_horizon, batch, vertices, 3D)
+            trajectory: Tensor of shape [n_sample, T, B, V, 3]
             undeformed_vert: Tensor of shape [B, V, 3] or [V, 3]
             idx: Index of the trajectory sample
-            save_dir: Directory to save the plot
+            save_dir: Directory to save the plot frames
             title: Title for the figure
         """
-        import matplotlib.pyplot as plt
-        from mpl_toolkits.mplot3d import Axes3D
-        import os
-        import numpy as np
+        # if passed in False, do not plot
+        if not self.plotting:
+            return
 
         os.makedirs(save_dir, exist_ok=True)
-        #trajectory has shape (n_sample, T, B, V, 3)
 
-        n_sample,T, B, V, _ = trajectory.shape
+        n_sample, T, B, V, _ = trajectory.shape
         trajectory = trajectory.cpu()
         undeformed_vert = undeformed_vert.cpu()
-        if undeformed_vert.ndim == 2:  # If shape is [V, 3], expand to [1, V, 3]
+
+        if undeformed_vert.ndim == 2:
             undeformed_vert = undeformed_vert.unsqueeze(0)
+
         for batch_idx in range(n_sample):
             for b in range(B):
                 verts = trajectory[batch_idx]  # [T, B, V, 3]
 
-                fig = plt.figure(figsize=(16, 8))
-                ax1 = fig.add_subplot(121, projection='3d')
-                ax2 = fig.add_subplot(122, projection='3d')
+                for t in range(T):
+                    fig = plt.figure(figsize=(8, 6))
+                    ax = fig.add_subplot(111, projection='3d')
 
-                for ax in [ax1, ax2]:
-                    for t in range(T):
-                        points = verts[t, b].numpy()  # shape: [V, 3]
-                        ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=1.0,
-                                label=f"t={t}" if t == 0 else "")
-                        for v in range(V):
-                            x, y, z = points[v, :].tolist()
-                            ax.scatter(x, y, z, color='black', s=10)
-
+                    points = verts[t, b].numpy()  # shape: [V, 3]
+                    ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=1.0, label=f"Wire at t={t}")
+                    ax.scatter(points[:, 0], points[:, 1], points[:, 2], color='black', s=10)
 
                     undeformed_np = undeformed_vert[b].numpy()
                     ax.plot(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', linestyle='--',
@@ -110,41 +87,34 @@ class TrainSimpleTrajData(Dataset):
                     ax.scatter(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', s=20,
                                marker='x')
 
-                    ax.set_title(f"{title} | Sample {idx}, Wire {b}")
+                    ax.set_title(f"{title} | Wire {idx}, t={t}")
                     ax.set_xlabel("X")
                     ax.set_ylabel("Y")
                     ax.set_zlabel("Z")
                     ax.set_xlim([-0.5, 1.0])
                     ax.set_ylim([-0.5, 1.0])
                     ax.set_zlim([-0.5, 0.5])
+                    ax.view_init(elev=30, azim=-45)
                     ax.legend()
 
-                ax1.view_init(elev=0, azim=90)
-                ax2.view_init(elev=30, azim=-45)
-
-                filename = os.path.join(save_dir, f"traj_sample{batch_idx}{idx}_wire{b}.png")
-                plt.tight_layout()
-                plt.savefig(filename)
-
-                plt.close()
-
+                    filename = os.path.join(save_dir, f"sample{idx}_wire{b}_t{t:03d}.png")
+                    plt.tight_layout()
+                    plt.savefig(filename)
+                    plt.close()
 
 
 class EvalSimpleTrajData(Dataset):
-    def __init__(self, undeformed_vert, gravity, time_horizon, n_samples, dt, device="cpu"):
+    def __init__(self, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
         super().__init__()
         self.device = device
 
         self.prev_traj = []
         self.curr_traj = []
         self.targ_traj = []
+        self.global_idx = 0 # index for frame saving plots
 
         for _ in range(n_samples):
-            full_traj = torch.zeros(time_horizon + 2, undeformed_vert.shape[0], 3, device=device)
-            for t in range(time_horizon + 2):
-                random_gravity = gravity + 0.2 * torch.randn(3).to(device)
-
-                full_traj[t] = undeformed_vert + 0.5 * random_gravity * (t * dt) ** 2
+            full_traj = sim.generate_preX_trajectory(total_time, dt)
 
             self.prev_traj.append(full_traj[:time_horizon])
             self.curr_traj.append(full_traj[1:time_horizon + 1])

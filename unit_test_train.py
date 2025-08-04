@@ -19,17 +19,18 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 50 # Total simulation time in seconds
+total_time = 504 # Total simulation time in seconds
 time_horizon = total_time-3
 eval_time_horizon = total_time - 2
 epochs = 1
 dt = 1e-2
 n_samples = 1  # Number of trajectories(batches) for training/evaluation
 timer = 0
-experiment_runs = 4
+experiment_runs = 1
 torch.manual_seed(int(time.time()))
 parent_clamped_selection = torch.tensor((0, 1, -2, -1))
-
+plotting = False # if True, saves trajectory frames
+randomize_rest = False  # if True, jitter rest-vertices & mass
 rest_vert = torch.tensor([
             [0.893471, -0.133465, 0.018059],
             # [0.880771, -0.119666, 0.017733],
@@ -46,6 +47,9 @@ rest_vert = torch.tensor([
             [-0.094659, -0.186181, 0.012403]
 
         ]).unsqueeze(0).repeat(batch, 1, 1).to(device)
+rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
+rdm_scale = 0.03 # Scale for randomizing rest vertices
+mass_low, mass_high = 0.8, 1.2 # Mass range for randomization
 
 # === Define Dataset class with previous_positions_traj generation ===
 class SimpleTrajectoryDataset(Dataset):
@@ -67,17 +71,17 @@ class SimpleTrajectoryDataset(Dataset):
 for run_id in range(experiment_runs):
     print(f"\n========== Run {run_id + 1} / 10 ==========\n")
     # randomize rest vertices slightly for each experiment run
-    rdm_scale = 0.03
-    rdm_vec = torch.rand(batch, n_vert, 3, device=device)
-    vec_norms = torch.norm(rdm_vec, dim=-1, keepdim=True)
-    rdm_vec = rdm_vec / vec_norms * rdm_scale
-    rest_vert = rest_vert + rdm_vec
-    rest_vert = torch.cat((rest_vert[:, :, 0:1], rest_vert[:, :, 2:3], -rest_vert[:, :, 1:2]), dim=-1)
-    rdm_mass = torch.rand(batch, n_vert, device=device) * 0.4 + 0.8
+    if randomize_rest:
 
-    b_DLO_mass = rdm_mass
+        rdm_vec = torch.rand(batch, n_vert, 3, device=device)
+        rdm_vec = rdm_vec / rdm_vec.norm(dim=-1, keepdim=True) * rdm_scale
+        rest_vert = rest_vert + rdm_vec
+        b_DLO_mass = (mass_high - mass_low) * torch.rand(batch, n_vert, device=device) + mass_low
+    else:
+        rest_vert = rest_vert.clone()
+        b_DLO_mass = torch.ones(batch, n_vert, device=device)
+
     sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, rest_vert,device)
-
     sim.train()
     # === Create train/eval datasets ===
     gravity = sim.gravity.detach()
@@ -89,24 +93,25 @@ for run_id in range(experiment_runs):
     eval_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     train_dataset = TrainSimpleTrajData(
         undeformed_vert=undeformed_vert,
-        time_horizon=time_horizon,
+        eval_time_horizon=time_horizon,
+        total_time=total_time,
+        n_samples=n_samples,
+        dt=dt,
+        device=device,
+        sim=sim,
+        plotting=plotting
+    )
+    train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
+    print("train_dataset length:", len(train_dataset))
+
+    eval_dataset = EvalSimpleTrajData(
+        time_horizon=eval_time_horizon,
         total_time=total_time,
         n_samples=n_samples,
         dt=dt,
         device=device,
         sim=sim
     )
-    train_loader = DataLoader(train_dataset, batch_size=batch, shuffle=True)
-    print("train_dataset length:", len(train_dataset))
-
-    # eval_dataset = EvalSimpleTrajData(
-    #     undeformed_vert=undeformed_vert,
-    #     gravity=gravity * 0.95,
-    #     time_horizon=time_horizon,
-    #     n_samples=n_samples - 2,
-    #     dt=dt,
-    #     device=device
-    # )
     # eval_loader = DataLoader(eval_dataset, batch_size=batch, shuffle=False)
     # === Define optimizer and loss ===
     optimizer = optim.SGD([

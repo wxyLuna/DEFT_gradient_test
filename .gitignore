@@ -8,3 +8,5 @@ __pycache__
 *.pyc
 *npy
 error_log/
+trajectory_plots_damping5/
+trajectory_plots_damping0/
