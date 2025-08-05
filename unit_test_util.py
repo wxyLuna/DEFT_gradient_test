@@ -7,7 +7,7 @@ import os
 
 
 class TrainSimpleTrajData(Dataset):
-    def __init__(self, undeformed_vert, eval_time_horizon, total_time, n_samples, dt, device="cpu",sim=None, plotting=False):
+    def __init__(self, undeformed_vert, train_time_horizon, total_time, n_samples, dt, device="cpu",sim=None, plotting=False):
         super().__init__()
         # sim = Unit_test_sim(batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass, device)
         self.device = device
@@ -15,26 +15,34 @@ class TrainSimpleTrajData(Dataset):
         self.curr_traj = []
         self.targ_traj = []
         self.global_idx = 0
+        self.undeformed_vert = undeformed_vert.detach().clone()
+        self.plotting = plotting
 
         for _ in range(n_samples):
-
             full_traj = sim.generate_preX_trajectory(total_time, dt)
             # generate sliding window segments
-            # take only the window starting at i=0
-            prev = full_traj[0:0 + eval_time_horizon]  # [0 .. H-1]
-            curr = full_traj[1:1 + eval_time_horizon]  # [1 .. H]
-            targ = full_traj[2:2 + eval_time_horizon]  # [2 .. H+1]
+            for i in range(total_time - 1 - train_time_horizon):
+                prev = full_traj[i: i + train_time_horizon]
+                curr = full_traj[i + 1: i + 1 + train_time_horizon]
+                targ = full_traj[i + 2: i + 2 + train_time_horizon]
 
-            self.prev_traj.append(prev)
-            self.curr_traj.append(curr)
-            self.targ_traj.append(targ)
+                self.prev_traj.append(prev)
+                self.curr_traj.append(curr)
+                self.targ_traj.append(targ)
 
 
-            self.global_idx += 1
+                self.global_idx += 1
 
         self.prev_traj = torch.stack(self.prev_traj)
         self.curr_traj = torch.stack(self.curr_traj)
         self.targ_traj = torch.stack(self.targ_traj)
+        self.save_trajectory_with_undeformed(
+            self.curr_traj,  # shape [,n_Sample, T, branch, V, 3]
+            self.undeformed_vert,
+            idx=self.global_idx,
+            save_dir="trajectory_plots",
+            title=f"Auto-Saved Trajectory Sample{self.global_idx}"
+        )
 
     def __len__(self):
         return self.curr_traj.shape[0]
@@ -50,7 +58,7 @@ class TrainSimpleTrajData(Dataset):
         Save a sequence of trajectory snapshots (one per time step) with undeformed reference overlaid.
 
         Args:
-            trajectory: Tensor of shape [n_sample, T, B, V, 3]
+            trajectory: Tensor of shape [n_sample, Time_horizon, n_Branch, Vertices, 3]
             undeformed_vert: Tensor of shape [B, V, 3] or [V, 3]
             idx: Index of the trajectory sample
             save_dir: Directory to save the plot frames
@@ -74,6 +82,7 @@ class TrainSimpleTrajData(Dataset):
                 verts = trajectory[batch_idx]  # [T, B, V, 3]
 
                 for t in range(T):
+                    print('t',t)
                     fig = plt.figure(figsize=(8, 6))
                     ax = fig.add_subplot(111, projection='3d')
 
@@ -104,7 +113,8 @@ class TrainSimpleTrajData(Dataset):
 
 
 class EvalSimpleTrajData(Dataset):
-    def __init__(self, time_horizon, total_time, n_samples, dt, device="cpu",sim=None):
+    def __init__(self, eval_time_horizon, total_time, n_samples, dt, device="cpu", sim=None,
+                 plotting=False):
         super().__init__()
         self.device = device
 
@@ -116,9 +126,14 @@ class EvalSimpleTrajData(Dataset):
         for _ in range(n_samples):
             full_traj = sim.generate_preX_trajectory(total_time, dt)
 
-            self.prev_traj.append(full_traj[:time_horizon])
-            self.curr_traj.append(full_traj[1:time_horizon + 1])
-            self.targ_traj.append(full_traj[2:time_horizon + 2])
+            # take only the window starting at i=0
+            prev = full_traj[0:0 + eval_time_horizon]  # [0 .. H-1]
+            curr = full_traj[1:1 + eval_time_horizon]  # [1 .. H]
+            targ = full_traj[2:2 + eval_time_horizon]  # [2 .. H+1]
+
+            self.prev_traj.append(prev)
+            self.curr_traj.append(curr)
+            self.targ_traj.append(targ)
 
         self.prev_traj = torch.stack(self.prev_traj)
         self.curr_traj = torch.stack(self.curr_traj)
@@ -131,5 +146,4 @@ class EvalSimpleTrajData(Dataset):
         return (self.prev_traj[idx].clone().detach(),
                 self.curr_traj[idx].clone().detach(),
                 self.targ_traj[idx].clone().detach())
-
 

@@ -19,8 +19,8 @@ n_branch = 1
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 504 # Total simulation time in seconds
-time_horizon = total_time-3
+total_time = 500 # Total simulation time in seconds
+train_time_horizon = 498
 eval_time_horizon = total_time - 2
 epochs = 1
 dt = 1e-2
@@ -89,11 +89,11 @@ for run_id in range(experiment_runs):
     undeformed = sim.undeformed_vert.detach()
     undeformed_vert = undeformed[0]
 
-    train_target_traj = torch.zeros(n_samples, time_horizon, n_vert, 3, device=device)
+    train_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     eval_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     train_dataset = TrainSimpleTrajData(
         undeformed_vert=undeformed_vert,
-        eval_time_horizon=time_horizon,
+        train_time_horizon=train_time_horizon,
         total_time=total_time,
         n_samples=n_samples,
         dt=dt,
@@ -105,7 +105,7 @@ for run_id in range(experiment_runs):
     print("train_dataset length:", len(train_dataset))
 
     eval_dataset = EvalSimpleTrajData(
-        time_horizon=eval_time_horizon,
+        eval_time_horizon=eval_time_horizon,
         total_time=total_time,
         n_samples=n_samples,
         dt=dt,
@@ -139,7 +139,7 @@ for run_id in range(experiment_runs):
 
 
             traj_loss, total_loss = sim.iterative_sim(
-                time_horizon, current_positions_traj, previous_positions_traj, target_traj, loss_func, dt, timer
+                train_time_horizon, current_positions_traj, previous_positions_traj, target_traj, loss_func, dt, timer
             )
             total_loss.backward(retain_graph=True)
             # print("mass_diagonal grad:", sim.mass_diagonal.grad)

@@ -256,8 +256,9 @@ class Unit_test_sim(nn.Module):
 
             # formatted_relative = np.vectorize(lambda x: f"{x:.3e}")(relative_error)
             #
-            # formatted_absolute = np.vectorize(lambda x: f"{x:.3e}")(absolute_error)
+            formatted_absolute = np.vectorize(lambda x: f"{x:.3e}")(absolute_error)
             print('analytical vs numerical ratio', formatted_ratio)
+            # print('absolute_error', formatted_absolute)
             # self.save_and_later_average_errors(ratio, relative_error, absolute_error, timer, t, save_dir="IR_error_logs",
             #                                    mode="save")
 
