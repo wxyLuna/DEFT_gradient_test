@@ -164,8 +164,8 @@ class DEFT_sim(nn.Module):
         # Flatten them for easier indexing
         self.batch_indices_flat = batch_indices.reshape(-1)
         self.parent_indices_flat = parent_indices.reshape(-1)
-
         self.batch_child1_indices_flat = batch_child1_indices.reshape(-1)
+
         self.child1_indices_flat = child1_indices.reshape(-1)
 
         self.batch_child2_indices_flat = batch_child2_indices.reshape(-1)

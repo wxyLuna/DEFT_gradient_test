@@ -17,7 +17,7 @@ import sys
 import os
 sys.path.append(module_dir)
 from constraints_solver import constraints_enforcement
-from util import rotation_matrix, computeW, computeLengths, computeEdges, clamp_index
+from util import rotation_matrix, computeW, computeLengths, computeEdges
 import gradients
 import numpy as np
 import re
@@ -26,7 +26,24 @@ import re
 
 
 class Unit_test_sim(nn.Module):
-    def __init__(self, batch, n_vert, n_branch, n_edge, pbd_iter, b_DLO_mass,rest_vert, device):
+    def __init__(self, batch,
+                        n_vert,
+                        n_branch,
+                        cs_n_vert,
+                        n_edge,
+                        b_DLO_mass,
+                        rest_vert,
+                        parent_DLO_MOI,
+                        children_DLO_MOI,
+                        clamped_index,
+                        rigid_body_coupling_index,
+                        parent_MOI_index1,
+                        parent_MOI_index2,
+                        parent_clamped_selection,
+                        child1_clamped_selection,
+                        child2_clamped_selection,
+                        damping,
+                        device):
         super().__init__()
         self.n_vert = n_vert
         self.n_edge = n_edge
@@ -48,6 +65,13 @@ class Unit_test_sim(nn.Module):
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(self.b_undeformed_vert.clone(), self.zero_mask)
         )
+        # Create a mask to handle situations where child branches end sooner
+        m_restRegionL_mask = torch.ones_like(self.m_restRegionL)
+        for i in range(len(cs_n_vert)):
+            m_restRegionL_mask[i + 1, cs_n_vert[i] - 1:] = 0.
+        # Apply the masks so that unused edges are 0
+        self.m_restRegionL = self.m_restRegionL * m_restRegionL_mask
+        self.m_restEdgeL = self.m_restEdgeL * m_restRegionL_mask
         self.batched_m_restEdgeL = self.m_restEdgeL.repeat(self.batch, 1, 1).view(-1, n_edge)
 
         self.m_restEdgeL_pos, self.m_restRegionL_pos = computeLengths(
@@ -85,16 +109,12 @@ class Unit_test_sim(nn.Module):
         self.parent_clamped_selection = torch.tensor((0, 1, -2, -1),device=device)  # hardcoded parent clamped selection
         self.child1_clamped_selection = torch.tensor((0), device=device)  # hardcoded child1 clamped selection
         self.child2_clamped_selection = torch.tensor((0), device=device)
-        clamp_parent = True
-        clamp_child1 = False
-        clamp_child2 = False
-        self.clamped_index, parent_theta_clamp, child1_theta_clamp, child2_theta_clamp = clamp_index(self.batch, self.parent_clamped_selection, self.child1_clamped_selection, self.child2_clamped_selection,
-                                         n_branch, n_vert, clamp_parent, clamp_child1, clamp_child2) # hardcoded clamped index for the first vertex
+
         inext_scale = self.clamped_index * 1e20
         self.inext_scale = (inext_scale + 1.).repeat(batch, 1)
         self.inext_scale = torch.cat((self.inext_scale[:, :-1], self.inext_scale[:, 1:]), dim=1).view(-1, n_edge)
         self.n_branch = n_branch
-        self.damping = nn.Parameter(torch.tensor(5.0, device=device))  # damping factor for single branch
+        self.damping = damping
         self.d_damping = torch.tensor(0*1e-6, device=device)
         self.damping_pos = nn.Parameter(self.damping + self.d_damping)
         self.damping_neg = nn.Parameter(self.damping - self.d_damping)
@@ -104,6 +124,25 @@ class Unit_test_sim(nn.Module):
         self.integration_ratio_pos = nn.Parameter(self.integration_ratio + self.d_integration_ratio)
         self.integration_ratio_neg = nn.Parameter(self.integration_ratio - self.d_integration_ratio)
 
+        self.rigid_body_coupling_index = rigid_body_coupling_index
+        # Store inertia (MOI) for parent/child in parameter form
+        self.p_DLO_diagonal = nn.Parameter(parent_DLO_MOI)
+        self.c_DLO_diagonal = nn.Parameter(children_DLO_MOI)
+
+        # Construct MOI matrices for children/parent rods
+        self.children_MOI_matrix = torch.zeros(n_branch - 1, 3, 3)
+        self.children_MOI_matrix[:, 0, 0] = self.c_DLO_diagonal[:, 0]
+        self.children_MOI_matrix[:, 1, 1] = self.c_DLO_diagonal[:, 1]
+        self.children_MOI_matrix[:, 2, 2] = self.c_DLO_diagonal[:, 2]
+
+        self.parent_MOI_matrix = torch.zeros((n_branch - 1) * 2, 3, 3)
+        self.parent_MOI_matrix[:, 0, 0] = self.p_DLO_diagonal[:, 0]
+        self.parent_MOI_matrix[:, 1, 1] = self.p_DLO_diagonal[:, 1]
+        self.parent_MOI_matrix[:, 2, 2] = self.p_DLO_diagonal[:, 2]
+
+        # We compute momentum scaling factors for rotation constraints
+        self.parent_MOI_index1 = parent_MOI_index1
+        self.parent_MOI_index2 = parent_MOI_index2
 
     def External_Force(self, mass_matrix
                        ):
@@ -236,37 +275,25 @@ class Unit_test_sim(nn.Module):
                                                                positions_input, self.damping, self.integration_ratio, dt)
             self.bkgrad_damping.grad_DX_damping = bkgrad_damping
             self.bkgrad_IR.grad_DX_IR = bkgrad_IR
-
-
-            positions_pos, _, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
-                                                                positions_input, self.damping_pos, self.integration_ratio_pos, dt)
-
-            positons_neg, _, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities,
-                                                                positions_input,self.damping_neg, self.integration_ratio_neg, dt)
-            #numerical perturbation
-            numerical_d_delta_positions_Numerical_Integration = (positions_pos - positons_neg) / 2
-            #analytical perturbation
-            analytical_d_delta_positions_Numerical_Integration = (self.bkgrad_damping.grad_DX_damping.reshape(self.batch*self.n_branch,self.n_vert,3,1).squeeze(-1) * self.d_damping.detach().numpy()
-                                                                  + self.bkgrad_IR.grad_DX_IR.reshape(self.batch*self.n_branch,self.n_vert,3,1).squeeze(-1) * self.d_integration_ratio.detach().numpy()) ##B update with matmul
-            numerical_d_delta_positions_Numerical_Integration_np = numerical_d_delta_positions_Numerical_Integration.detach().numpy()
-            ratio = analytical_d_delta_positions_Numerical_Integration/numerical_d_delta_positions_Numerical_Integration_np
-            relative_error = np.abs((analytical_d_delta_positions_Numerical_Integration - numerical_d_delta_positions_Numerical_Integration_np) / numerical_d_delta_positions_Numerical_Integration_np)
-            absolute_error = np.abs(analytical_d_delta_positions_Numerical_Integration - numerical_d_delta_positions_Numerical_Integration_np)
-            formatted_ratio = np.vectorize(lambda x: f"{x:.3e}")(ratio)
-
-            # formatted_relative = np.vectorize(lambda x: f"{x:.3e}")(relative_error)
-            #
-            formatted_absolute = np.vectorize(lambda x: f"{x:.3e}")(absolute_error)
-            print('analytical vs numerical ratio', formatted_ratio)
-            # print('absolute_error', formatted_absolute)
-            # self.save_and_later_average_errors(ratio, relative_error, absolute_error, timer, t, save_dir="IR_error_logs",
-            #                                    mode="save")
-
-
             #enforce clamped vertices
             positions[:, self.parent_clamped_selection, :] = self.undeformed_vert[:,self.parent_clamped_selection,:].detach()
             # ___Analytical gradient & Center values for inextensibility constraint enforcement___
+
             for _ in range(constraint_loop):
+                parent_vertices = positions[self.selected_parent_index].reshape((self.batch, self.n_vert, 3))
+                children_vertices = positions[self.selected_children_index].reshape(
+                    (self.batch, -1, self.n_vert, 3))
+
+                #coupling constraints
+                positions = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                    parent_vertices,
+                    children_vertices,
+                    self.rigid_body_coupling_index,
+                    self.coupling_mass_scale,
+                    self.selected_parent_index,
+                    self.selected_children_index
+                )
+                #Inextensibility constraint
                 positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
                     positions,
