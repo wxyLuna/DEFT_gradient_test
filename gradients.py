@@ -365,3 +365,87 @@ def grad_DX_X_Coupling_batch(M_pc, M_cc):
 
     return grad_DX_X_Coupling
 
+def grad_DX_X_ICEC_batch(M_0, M_1, X_0, X_1):
+    """
+    Batch version of Gradient of the inextensibility constraint iterative function with respect to the positions X_0 and X_1.
+
+    # Inputs:
+    - M_0: [batch_size, 3, 3] mass matrix of vertex i
+    - M_1: [batch_size, 3, 3] mass matrix of vertex i+1
+    - X_0: [batch_size, 3, 1] position of vertex i
+    - X_1: [batch_size, 3, 1] position of vertex i+1
+
+    # Outputs:
+    - grad_00: [batch_size, 3, 3] gradient of DX_0 with respect to X_0
+    - grad_01: [batch_size, 3, 3] gradient of DX_0 with respect to X_1
+    - grad_10: [batch_size, 3, 3] gradient of DX_1 with respect to X_0
+    - grad_11: [batch_size, 3, 3] gradient of DX_1 with respect to X_1
+
+    the batch here is actually num_batch * num_branch, while the branch is num_branch
+    """
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+    batch_size = M_0.shape[0]
+
+    # Compute M_param for each batch
+    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+
+    # Compute gradients for each batch
+    grad_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param)
+
+    grad_01 = np.einsum('bij,bjk,bkl->bil', M_1, M_param)
+
+    grad_10 = np.einsum('bij,bjk,bkl->bil', M_0, M_param)
+
+    grad_11 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param)
+
+    grad_DX_X = np.concatenate(
+        (np.concatenate((grad_00, grad_01), axis=2),
+         np.concatenate((grad_10, grad_11), axis=2)),
+        axis=1
+    )
+
+    return grad_DX_X
+
+def grad_DX_M_ICEC_batch(M_0, M_1, X_0, X_1):
+    """
+    Batch version of Gradient of the inextensibility constraint iterative function with respect to the mass matrices M_0 and M_1.
+
+    # Inputs:
+    - M_0: [batch_size, 3, 3] mass matrix of vertex i
+    - M_1: [batch_size, 3, 3] mass matrix of vertex i+1
+    - X_0: [batch_size, 3, 1] position of vertex i
+    - X_1: [batch_size, 3, 1] position of vertex i+1
+
+    # Outputs:
+    - grad_M_00: [batch_size, 3, 1] gradient of DX_0 with respect to M_0
+    - grad_M_01: [batch_size, 3, 1] gradient of DX_0 with respect to M_1
+    - grad_M_10: [batch_size, 3, 1] gradient of DX_1 with respect to M_0
+    - grad_M_11: [batch_size, 3, 1] gradient of DX_1 with respect to M_1
+
+    the batch here is actually num_batch * num_branch, while the branch is num_branch
+    """
+    batch_size = M_0.shape[0]
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+
+    # Compute M_param for each batch
+    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+
+    # Compute Edge and Edge_init for each batch
+    Edge = X_1 - X_0  # [batch_size, 3, 1]
+
+    Edge = Edge[:,:,np.newaxis]
+    # Compute gradients for each batch
+    grad_M_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param @ M_param, Edge)  # [batch_size, 3, 1]
+    grad_M_01 = np.einsum('bij,bjk->bik', (np.eye(3) - M_1 @ M_param), M_param @ Edge)  # [batch_size, 3, 1]
+    grad_M_10 = -np.einsum('bij,bjk->bik', (np.eye(3) - M_0 @ M_param), M_param @ Edge)  # [batch_size, 3, 1]
+    grad_M_11 = np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge)  # [batch_size, 3, 1]
+
+    grad_DX_M = np.concatenate(
+        (np.concatenate((grad_M_00, grad_M_01), axis=2),
+         np.concatenate((grad_M_10, grad_M_11), axis=2)),
+        axis=1
+    )
+    
+    return grad_DX_M
