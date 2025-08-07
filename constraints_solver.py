@@ -428,6 +428,9 @@ class constraints_enforcement(nn.Module):
                                             after enforcing coupling constraints.
         """
         # Vector from parent to child's first vertex
+        print('coupling_index', coupling_index)
+        print('child_vertices', child_vertices.shape)
+        print('parent_vertices', parent_vertices.shape)
         updated_edges = child_vertices[:, 0] - parent_vertices[:, coupling_index].view(-1, 3)
 
         # coupling_mass_scale => (l1, l2)

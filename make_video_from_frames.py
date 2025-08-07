@@ -2,7 +2,7 @@ import os
 import subprocess
 from glob import glob
 
-def make_videos_from_frames(frame_dir="trajectory_plots_damping5", output_dir="trajectory_videos", fps=30):
+def make_videos_from_frames(frame_dir="trajectory_plots_coupling", output_dir="trajectory_videos", fps=30):
     """
     Converts saved trajectory image frames into videos using ffmpeg.
 
@@ -14,7 +14,7 @@ def make_videos_from_frames(frame_dir="trajectory_plots_damping5", output_dir="t
     os.makedirs(output_dir, exist_ok=True)
 
     # Find all frame files
-    frame_files = sorted(glob(os.path.join(frame_dir, "sample*_wire*_t*.png")))
+    frame_files = sorted(glob(os.path.join(frame_dir, "sample*_t*.png")))
 
     # Group frames by (sample, wire)
     from collections import defaultdict
@@ -27,20 +27,24 @@ def make_videos_from_frames(frame_dir="trajectory_plots_damping5", output_dir="t
         key = (sample, wire)
         frame_dict[key].append(path)
 
+
     # Create video for each group
     for (sample, wire), frames in frame_dict.items():
+        print('hi')
         # Ensure sorting by timestep
         frames.sort()
 
+
         # Prepare a temporary directory with renamed sequential files
         tmp_dir = os.path.join(output_dir, f"temp_sample{sample}_wire{wire}")
+
         os.makedirs(tmp_dir, exist_ok=True)
         for i, src_path in enumerate(frames):
             dst_path = os.path.join(tmp_dir, f"frame_{i:03d}.png")
             os.system(f"cp {src_path} {dst_path}")
 
         # Generate video
-        output_path = os.path.join(output_dir, f"sample{sample}_wire{wire}.mp4")
+        output_path = os.path.join(output_dir, f"{frame_dir }.mp4")
         cmd = [
             "ffmpeg",
             "-y",  # overwrite output

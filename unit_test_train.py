@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-from util import clamp_index,index_init, DEFT_initialization, construct_b_DLOs
+from util import clamp_index,index_init, DEFT_initialization, construct_b_DLOs, visualize_tensors_3d_in_same_plot_no_zeros
 
 from Unit_test_sim import Unit_test_sim  # Your custom simulation class
 from unit_test_util import TrainSimpleTrajData, EvalSimpleTrajData
@@ -24,7 +24,7 @@ n_branch = 3
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 50 # Total simulation time in seconds
+total_time = 150 # Total simulation time in seconds
 train_time_horizon = total_time-2
 eval_time_horizon = total_time - 2
 epochs = 1
@@ -106,7 +106,7 @@ damping = nn.Parameter(torch.tensor((2.5, 2.5, 2.5), device=device))
 ##for rest_vert randomization
 rdm_scale = 0.03 # Scale for randomizing rest vertices
 mass_low, mass_high = 0.8, 1.2 # Mass range for randomization
-plotting = False # if True, saves trajectory frames
+plotting = True # if True, saves trajectory frames
 randomize_rest = False  # if True, jitter rest-vertices & mass
 
 # === Define Dataset class with previous_positions_traj generation ===
@@ -163,12 +163,12 @@ for run_id in range(experiment_runs):
     gravity = sim.gravity.detach()
     eval_gravity = gravity * 0.95
     undeformed = sim.undeformed_vert.detach()
-    undeformed_vert = undeformed[0]
+    undeformed_vert_for_data_generation = undeformed
 
     train_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     eval_target_traj = torch.zeros(n_samples, eval_time_horizon, n_vert, 3, device=device)
     train_dataset = TrainSimpleTrajData(
-        undeformed_vert=undeformed_vert,
+        undeformed_vert=undeformed_vert_for_data_generation,
         train_time_horizon=train_time_horizon,
         total_time=total_time,
         n_samples=n_samples,

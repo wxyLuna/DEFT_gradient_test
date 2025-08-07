@@ -302,6 +302,7 @@ class Unit_test_sim(nn.Module):
                 parent_vertices = positions[self.selected_parent_index]
                 children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
 
+                children_vertices = children_vertices.view(-1, self.n_vert, 3)
                 #coupling constraints
                 positions = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                     parent_vertices,
@@ -394,9 +395,23 @@ class Unit_test_sim(nn.Module):
             positions_t1_clamp_selection[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
             # Enforce inextensibility constraint (Step 4)
             for _ in range(10):  # constraint_loop
+                parent_vertices = positions_t1_clamp_selection[self.selected_parent_index]
+                children_vertices = positions_t1_clamp_selection[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
+
+
+                children_vertices = children_vertices.view(-1, self.n_vert, 3)
+                # coupling constraints
+                positions = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                    parent_vertices,
+                    children_vertices,
+                    self.rigid_body_coupling_index,
+                    self.coupling_mass_scale,
+                    self.selected_parent_index,
+                    self.selected_children_index
+                )
                 positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
-                    positions_t1_clamp_selection,
+                    positions,
                     self.batched_m_restEdgeL,
                     self.mass_matrix,
                     self.clamped_index,

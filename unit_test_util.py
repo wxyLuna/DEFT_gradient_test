@@ -2,6 +2,7 @@ import torch
 from torch.utils.data import Dataset
 import matplotlib.pyplot as plt
 import os
+import numpy as np
 
 
 
@@ -78,38 +79,51 @@ class TrainSimpleTrajData(Dataset):
             undeformed_vert = undeformed_vert.unsqueeze(0)
 
         for batch_idx in range(n_sample):
-            for b in range(B):
-                verts = trajectory[batch_idx]  # [T, B, V, 3]
+            verts = trajectory[batch_idx]  # [T, B, V, 3]
 
-                for t in range(T):
-                    print('t',t)
-                    fig = plt.figure(figsize=(8, 6))
-                    ax = fig.add_subplot(111, projection='3d')
+            for t in range(T):
+                print('t', t)
+                fig = plt.figure(figsize=(8, 6))
+                ax = fig.add_subplot(111, projection='3d')
 
+                for b in range(B):
+                    print('branch number', b)
                     points = verts[t, b].numpy()  # shape: [V, 3]
-                    ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=1.0, label=f"Wire at t={t}")
-                    ax.scatter(points[:, 0], points[:, 1], points[:, 2], color='black', s=10)
+                    undeformed_np = undeformed_vert[b].numpy()  # shape: [V, 3]
 
-                    undeformed_np = undeformed_vert[b].numpy()
-                    ax.plot(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', linestyle='--',
-                            label='Undeformed')
-                    ax.scatter(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2], c='green', s=20,
-                               marker='x')
+                    # Create masks to skip [0,0,0] points
+                    mask_traj = ~np.all(points == 0, axis=1)
+                    mask_undeformed = ~np.all(undeformed_np == 0, axis=1)
 
-                    ax.set_title(f"{title} | Wire {idx}, t={t}")
-                    ax.set_xlabel("X")
-                    ax.set_ylabel("Y")
-                    ax.set_zlabel("Z")
-                    ax.set_xlim([-0.5, 1.0])
-                    ax.set_ylim([-0.5, 1.0])
-                    ax.set_zlim([-0.5, 0.5])
-                    ax.view_init(elev=30, azim=-45)
-                    ax.legend()
+                    # Apply mask before plotting
+                    points = points[mask_traj]
+                    undeformed_np = undeformed_np[mask_undeformed]
 
-                    filename = os.path.join(save_dir, f"sample{idx}_wire{b}_t{t:03d}.png")
-                    plt.tight_layout()
-                    plt.savefig(filename)
-                    plt.close()
+                    # Plot only if there are non-zero points
+                    if points.shape[0] > 0:
+                        ax.plot(points[:, 0], points[:, 1], points[:, 2], alpha=1.0, label=f"Branch {b} at t={t}")
+                        ax.scatter(points[:, 0], points[:, 1], points[:, 2], color='black', s=10)
+
+                    if undeformed_np.shape[0] > 0:
+                        ax.plot(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2],
+                                c='green', linestyle='--')
+                        ax.scatter(undeformed_np[:, 0], undeformed_np[:, 1], undeformed_np[:, 2],
+                                   c='green', s=20, marker='x')
+
+                ax.set_title(f"{title} | Sample {idx}, t={t}")
+                ax.set_xlabel("X")
+                ax.set_ylabel("Y")
+                ax.set_zlabel("Z")
+                ax.set_xlim([-0.5, 1.0])
+                ax.set_ylim([-0.5, 1.0])
+                ax.set_zlim([-0.5, 0.5])
+                ax.view_init(elev=30, azim=-45)
+                ax.legend()
+
+                filename = os.path.join(save_dir, f"sample{idx}_t{t:03d}.png")
+                plt.tight_layout()
+                plt.savefig(filename)
+                plt.close()
 
 
 class EvalSimpleTrajData(Dataset):

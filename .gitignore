@@ -10,3 +10,4 @@ __pycache__
 error_log/
 trajectory_plots_damping5/
 trajectory_plots_damping0/
+*.png
