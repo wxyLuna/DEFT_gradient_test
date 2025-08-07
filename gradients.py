@@ -67,7 +67,16 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     batch_size = M_0.shape[0]
 
     # Compute M_param for each batch
-    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+    M_param = np.zeros((batch_size, 3, 3))
+
+    for i in range(batch_size):
+        # Skip if any row in M_0[i] or M_1[i] is all zeros
+        if np.any(np.all(M_0[i] == 0, axis=1)) or np.any(np.all(M_1[i] == 0, axis=1)):
+            continue
+        sum_M = M_0[i] + M_1[i]
+        if np.linalg.det(sum_M) == 0:
+            continue
+        M_param[i] = np.linalg.inv(sum_M)
 
     # Compute Edge and Edge_init for each batch
     Edge = X_1 - X_0  # [batch_size, 3, 1]
@@ -134,7 +143,16 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
 
     # Compute M_param for each batch
-    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+    M_param = np.zeros((batch_size, 3, 3))
+
+    for i in range(batch_size):
+        # Skip if any row in M_0[i] or M_1[i] is all zeros
+        if np.any(np.all(M_0[i] == 0, axis=1)) or np.any(np.all(M_1[i] == 0, axis=1)):
+            continue
+        sum_M = M_0[i] + M_1[i]
+        if np.linalg.det(sum_M) == 0:
+            continue
+        M_param[i] = np.linalg.inv(sum_M)
 
     # Compute Edge and Edge_init for each batch
     Edge = X_1 - X_0  # [batch_size, 3, 1]
@@ -189,7 +207,16 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     X_0_init, X_1_init = np.asarray(X_0_init), np.asarray(X_1_init)
 
     # Compute M_param for each batch
-    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+    M_param = np.zeros((batch_size, 3, 3))
+
+    for i in range(batch_size):
+        # Skip if any row in M_0[i] or M_1[i] is all zeros
+        if np.any(np.all(M_0[i] == 0, axis=1)) or np.any(np.all(M_1[i] == 0, axis=1)):
+            continue
+        sum_M = M_0[i] + M_1[i]
+        if np.linalg.det(sum_M) == 0:
+            continue
+        M_param[i] = np.linalg.inv(sum_M)
 
     # Compute Edge and Edge_init for each batch
     Edge = X_1 - X_0  # [batch_size, 3, 1]

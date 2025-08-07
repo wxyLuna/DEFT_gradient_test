@@ -32,7 +32,7 @@ class Unit_test_sim(nn.Module):
                         cs_n_vert,
                         n_edge,
                         b_DLO_mass,
-                        rest_vert,
+                        b_undeformed_vert,
                         parent_DLO_MOI,
                         children_DLO_MOI,
                         clamped_index,
@@ -50,18 +50,26 @@ class Unit_test_sim(nn.Module):
         self.device = device
         self.batch = batch
         self.n_branch = n_branch
+        # For identifying the branches in a batch:
+        # - child1 is 1 mod n_branch
+        # - child2 is 2 mod n_branch
+        # - parent is 0 mod n_branch
+        selected_child1_index = list(range(1, batch * n_branch, n_branch))
+        selected_child2_index = list(range(2, batch * n_branch, n_branch))
+        selected_parent_index = list(range(0, batch * n_branch, n_branch))
+        self.selected_parent_index = torch.tensor(selected_parent_index)
+        self.selected_child1_index = torch.tensor(selected_child1_index)
+        self.selected_child2_index = torch.tensor(selected_child2_index)
+        # For parallelization across a batch and multiple branches:
+        # We'll figure out child vs parent branches (indices) in a vectorized way
+        selected_children_index = [i for i in range(1, batch * n_branch) if i % n_branch != 0]
+        self.selected_children_index = selected_children_index
 
 
-        self.b_undeformed_vert = rest_vert.clone()
+        self.b_undeformed_vert = b_undeformed_vert.clone()
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
-        self.d_positions_init = torch.tensor([[[0.0, 0.0, 0.0],
-                                               [0.0, 0.0, 0.0],
-                                               [1.0, 3.0, 5.0],
-                                               [0.0, 1.0, 4.0],
-                                               [2.0, 4.0, 6.0],
-                                               [0.0, 0.0, 0.0],
-                                               [0.0, 0.0, 0.0]]]) * 1e-6
+        self.d_positions_init = torch.zeros_like(self.b_undeformed_vert) #initialize the initial positions perturbation to zero
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(self.b_undeformed_vert.clone(), self.zero_mask)
         )
@@ -83,7 +91,7 @@ class Unit_test_sim(nn.Module):
             computeEdges(self.b_undeformed_vert.clone() - self.d_positions_init.clone(), self.zero_mask)
         )
         self.batched_m_restEdgeL_neg = self.m_restEdgeL_neg.repeat(self.batch, 1, 1).view(-1, n_edge)
-        self.undeformed_vert = nn.Parameter(rest_vert)
+        self.undeformed_vert = nn.Parameter(self.b_undeformed_vert)
         ## for storing the old gradients from inextensibility enforcement
         self.bkgrad = gradients.BackwardGradientIC(self.batch *n_branch, n_vert)
         self.bkgrad_neg = gradients.BackwardGradientIC(self.batch * n_branch, n_vert)
@@ -95,13 +103,16 @@ class Unit_test_sim(nn.Module):
         self.gravity = nn.Parameter(torch.tensor((0, 0, -9.81), device=device))
         self.dt = 1e-2
 
+        self.clamped_index = clamped_index
+
         self.mass_diagonal = nn.Parameter(b_DLO_mass)
         self.mass_matrix = (
-            torch.eye(3)
-            .unsqueeze(0).unsqueeze(0)
-            .repeat(batch, n_vert, 1, 1)
-            * self.mass_diagonal.unsqueeze(-1).unsqueeze(-1)
-        )  # shape: (batch, n_vert, 3, 3)
+                torch.eye(3)
+                .unsqueeze(dim=0)
+                .unsqueeze(dim=0)
+                .repeat(n_branch, n_vert, 1, 1)
+                * (self.mass_diagonal.unsqueeze(dim=-1).unsqueeze(dim=-1))
+        ).unsqueeze(dim=0).repeat(batch, 1, 1, 1, 1).view(-1, n_vert, 3, 3)
         mass_scale1 = self.mass_matrix[:, 1:] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         mass_scale2 = self.mass_matrix[:, :-1] @ torch.linalg.pinv(self.mass_matrix[:, 1:] + self.mass_matrix[:, :-1])
         self.mass_scale = torch.cat((mass_scale1, -mass_scale2), dim=1).view(-1, self.n_edge, 3, 3)
@@ -143,6 +154,14 @@ class Unit_test_sim(nn.Module):
         # We compute momentum scaling factors for rotation constraints
         self.parent_MOI_index1 = parent_MOI_index1
         self.parent_MOI_index2 = parent_MOI_index2
+
+        # Next, we compute coupling mass scale for the branching points
+        parent_mass = self.mass_matrix[selected_parent_index][:, rigid_body_coupling_index].view(-1, 3, 3)
+        children_mass = self.mass_matrix[selected_children_index, 0]
+        self.selected_children_index = selected_children_index
+        mass_scale1 = children_mass @ torch.linalg.inv(parent_mass + children_mass)
+        mass_scale2 = parent_mass @ torch.linalg.inv(parent_mass + children_mass)
+        self.coupling_mass_scale = torch.cat((mass_scale1.unsqueeze(dim=1), -mass_scale2.unsqueeze(dim=1)), dim=1)
 
     def External_Force(self, mass_matrix
                        ):
@@ -280,9 +299,8 @@ class Unit_test_sim(nn.Module):
             # ___Analytical gradient & Center values for inextensibility constraint enforcement___
 
             for _ in range(constraint_loop):
-                parent_vertices = positions[self.selected_parent_index].reshape((self.batch, self.n_vert, 3))
-                children_vertices = positions[self.selected_children_index].reshape(
-                    (self.batch, -1, self.n_vert, 3))
+                parent_vertices = positions[self.selected_parent_index]
+                children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
 
                 #coupling constraints
                 positions = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
@@ -372,8 +390,6 @@ class Unit_test_sim(nn.Module):
             total_force = self.External_Force(self.mass_matrix)  # Apply gravity
             positions_t1,_, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities_t,
                                                    positions_t, self.damping, self.integration_ratio, dt)
-            # positions_t1_clamp_index = positions_t1.clone()
-            # positions_t1_clamp_index[clamp_mask.expand_as(positions_t1)] = self.undeformed_vert.detach()[clamp_mask.expand_as(positions_t1)]
             positions_t1_clamp_selection = positions_t1.clone()
             positions_t1_clamp_selection[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
             # Enforce inextensibility constraint (Step 4)

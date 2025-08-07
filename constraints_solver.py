@@ -332,77 +332,78 @@ class constraints_enforcement(nn.Module):
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
 
-            error = torch.norm(current_vertices[:, i + 1] - current_vertices[:, i], dim=-1) - nominal_length[:, i]
-
-
-            DX_0, DX_1 = func_DX_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-            DX_0 /= scale[:, i]
-            DX_1  /= scale[:, i]
-
-            # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
-
-            # ___Update the gradient for the current vertices___
-            grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-            grad_DX_X_step /= np.repeat(np.array(scale[:, i]),3).reshape(batch,1,6)
-
-            grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2), :].copy()
-
-            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
-            grad_step_DX_X = np.concatenate((
-                np.zeros((n_branch * batch, 6, 3 * i)),
-                grad_DX_X_step,
-                np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-
-            grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
-
-            # ___Update the gradient for the undeformed vertices___
-            grad_DX_Xinit_step = gradients.grad_DX_Xinit_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-            grad_DX_Xinit_step /= np.repeat(np.array(scale[:, i]),3).reshape(batch,1,6)
-
-            grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2), :].copy()
-            grad_chain_passed_DX_Xinit = grad_DX_X_step @ grad_interest_DX_Xinit
-            grad_step_DX_Xinit = np.concatenate((
-                np.zeros((n_branch * batch, 6, 3 * i)),
-                grad_DX_Xinit_step,
-                np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-
-            grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2),
-            :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
-
-            # ___Update the gradient for the mass scale___
-            grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
-                DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
-            )
-
-            grad_DX_M_step /= np.array(scale[:, i])
-
-            grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2), :].copy()
-            grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
-
-            grad_step_DX_M = np.concatenate((
-                np.zeros((n_branch * batch, 6, i)),
-                grad_DX_M_step,
-                np.zeros((n_branch * batch, 6, (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-
-            grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2),
-            :] = grad_interest_DX_M + grad_step_DX_M + grad_chain_passed_DX_M
+            # error = torch.norm(current_vertices[:, i + 1] - current_vertices[:, i], dim=-1) - nominal_length[:, i]
+            #
+            #
+            # DX_0, DX_1 = func_DX_ICitr_batch(
+            #     DLO_mass[:, i], DLO_mass[:, i + 1],
+            #     current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
+            #     undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            # )
+            # DX_0 /= scale[:, i]
+            # DX_1  /= scale[:, i]
+            #
+            # # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
+            #
+            # # ___Update the gradient for the current vertices___
+            # grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
+            #     DLO_mass[:, i], DLO_mass[:, i + 1],
+            #     current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
+            #     undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            # )
+            #
+            # grad_DX_X_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1, 6).view(n_branch,6,6)) ## this may need to be checked
+            #
+            # grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2), :].copy()
+            #
+            # grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
+            # grad_step_DX_X = np.concatenate((
+            #     np.zeros((n_branch * batch, 6, 3 * i)),
+            #     grad_DX_X_step,
+            #     np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
+            # ), axis=2)
+            #
+            # grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
+            #
+            # # ___Update the gradient for the undeformed vertices___
+            # grad_DX_Xinit_step = gradients.grad_DX_Xinit_ICitr_batch(
+            #     DLO_mass[:, i], DLO_mass[:, i + 1],
+            #     current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
+            #     undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            # )
+            # grad_DX_Xinit_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1, 6).view(n_branch,6,6))
+            #
+            # grad_interest_DX_Xinit = grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2), :].copy()
+            # grad_chain_passed_DX_Xinit = grad_DX_X_step @ grad_interest_DX_Xinit
+            # grad_step_DX_Xinit = np.concatenate((
+            #     np.zeros((n_branch * batch, 6, 3 * i)),
+            #     grad_DX_Xinit_step,
+            #     np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
+            # ), axis=2)
+            #
+            # grad_per_ICitr.grad_DX_Xinit[:, 3 * i: 3 * (i + 2),
+            # :] = grad_interest_DX_Xinit + grad_step_DX_Xinit + grad_chain_passed_DX_Xinit
+            #
+            # # ___Update the gradient for the mass scale___
+            # grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
+            #     DLO_mass[:, i], DLO_mass[:, i + 1],
+            #     current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
+            #     undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+            # )
+            #
+            # grad_DX_M_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1,2).view(n_branch,6,2))
+            #
+            # grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2), :].copy()
+            # grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
+            #
+            # grad_step_DX_M = np.concatenate((
+            #     np.zeros((n_branch * batch, 6, i)),
+            #     grad_DX_M_step,
+            #     np.zeros((n_branch * batch, 6, (current_vertices_copy.size()[1] - i - 2)))
+            # ), axis=2)
+            #
+            # grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2),
+            # :] = grad_interest_DX_M + grad_step_DX_M + grad_chain_passed_DX_M
 
         return current_vertices, grad_per_ICitr
 

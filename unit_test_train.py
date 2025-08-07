@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-from util import clamp_index,index_init, DEFT_initialization
+from util import clamp_index,index_init, DEFT_initialization, construct_b_DLOs
 
 from Unit_test_sim import Unit_test_sim  # Your custom simulation class
 from unit_test_util import TrainSimpleTrajData, EvalSimpleTrajData
@@ -65,6 +65,24 @@ rigid_body_coupling_index = [4, 8]
 clamp_parent = True
 clamp_child1 = False
 clamp_child2 = False
+b_DLOs_vertices_undeform_untransform, _ = construct_b_DLOs(
+        batch,
+        rigid_body_coupling_index,
+        n_parent_vertices,
+        n_children_vertices,
+        n_branch,
+        parent_vertices_undeform,
+        parent_vertices_undeform,
+        child1_vertices_undeform,
+        child1_vertices_undeform,
+        child2_vertices_undeform,
+        child2_vertices_undeform
+    )
+b_DLOs_vertices_undeform_transform = torch.zeros_like(b_DLOs_vertices_undeform_untransform)
+b_DLOs_vertices_undeform_transform[:, :, :, 0] = -b_DLOs_vertices_undeform_untransform[:, :, :, 2]
+b_DLOs_vertices_undeform_transform[:, :, :, 1] = -b_DLOs_vertices_undeform_untransform[:, :, :, 0]
+b_DLOs_vertices_undeform_transform[:, :, :, 2] = b_DLOs_vertices_undeform_untransform[:, :, :, 1]
+b_undeformed_vert = b_DLOs_vertices_undeform_transform[0].view(n_branch, -1, 3)
 clamped_index, parent_theta_clamp, child1_theta_clamp, child2_theta_clamp = clamp_index(batch, parent_clamped_selection, child1_clamped_selection, child2_clamped_selection,
                                          n_branch, n_vert, clamp_parent, clamp_child1, clamp_child2) # hardcoded clamped index for the first vertex
 index_selection1, index_selection2, parent_MOI_index1, parent_MOI_index2 = index_init(
@@ -113,12 +131,12 @@ for run_id in range(experiment_runs):
     # randomize rest vertices slightly for each experiment run
     if randomize_rest:
 
-        rdm_vec = torch.rand(batch, n_vert, 3, device=device)
+        rdm_vec = torch.rand(batch, n_branch, n_vert, 3, device=device)
         rdm_vec = rdm_vec / rdm_vec.norm(dim=-1, keepdim=True) * rdm_scale
-        rest_vert = rest_vert + rdm_vec
+        b_undeformed_vert = b_undeformed_vert + rdm_vec
         b_DLO_mass = (mass_high - mass_low) * torch.rand(batch, n_vert, device=device) + mass_low
     else:
-        rest_vert = rest_vert.clone()
+        b_undeformed_vert = b_undeformed_vert.clone()
         b_DLO_mass = b_DLO_mass.clone()
 
     sim = Unit_test_sim(batch,
@@ -127,7 +145,7 @@ for run_id in range(experiment_runs):
                         n_children_vertices,
                         n_edge,
                         b_DLO_mass,
-                        rest_vert,
+                        b_undeformed_vert,
                         parent_MOI,
                         children_MOI,
                         clamped_index,
