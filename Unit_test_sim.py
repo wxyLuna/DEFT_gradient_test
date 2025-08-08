@@ -42,6 +42,9 @@ class Unit_test_sim(nn.Module):
                         parent_clamped_selection,
                         child1_clamped_selection,
                         child2_clamped_selection,
+                        clamp_parent,
+                        clamp_child1,
+                        clamp_child2,
                         damping,
                         device):
         super().__init__()
@@ -50,6 +53,9 @@ class Unit_test_sim(nn.Module):
         self.device = device
         self.batch = batch
         self.n_branch = n_branch
+        self.clamp_parent = clamp_parent
+        self.clamp_child1 = clamp_child1
+        self.clamp_child2 = clamp_child2
         # For identifying the branches in a batch:
         # - child1 is 1 mod n_branch
         # - child2 is 2 mod n_branch
@@ -69,6 +75,7 @@ class Unit_test_sim(nn.Module):
         self.b_undeformed_vert = b_undeformed_vert.clone()
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
         self.zero_mask_num = 1 - self.zero_mask.repeat(batch, 1).to(torch.uint8)
+
         self.d_positions_init = torch.zeros_like(self.b_undeformed_vert) #initialize the initial positions perturbation to zero
         self.m_restEdgeL, self.m_restRegionL = computeLengths(
             computeEdges(self.b_undeformed_vert.clone(), self.zero_mask)
@@ -98,7 +105,10 @@ class Unit_test_sim(nn.Module):
         self.bkgrad_pos = gradients.BackwardGradientIC(self.batch * n_branch, n_vert)
         ## for storing the old gradients from Numerical integration
         self.bkgrad_damping = gradients.BackwardGradientDamping(self.batch, n_branch, n_vert)
-        self.bkgrad_IR = gradients.BackwardGradientIR(self.batch, n_vert)
+        self.bkgrad_IR = gradients.BackwardGradientIR(self.batch*n_branch, n_vert)
+        # for storing old gradients from ICE coupling constraints
+        self.bkgrad_coupling = gradients.BackwardGradientCoupling(self.batch*n_branch, n_vert)
+
 
         self.gravity = nn.Parameter(torch.tensor((0, 0, -9.81), device=device))
         self.dt = 1e-2
@@ -155,6 +165,19 @@ class Unit_test_sim(nn.Module):
         self.parent_MOI_index1 = parent_MOI_index1
         self.parent_MOI_index2 = parent_MOI_index2
 
+        self.parent_MOI_index1 = parent_MOI_index1
+        self.parent_MOI_index2 = parent_MOI_index2
+
+        rod_MOI1, rod_MOI2 = self.parent_MOI_matrix[parent_MOI_index1].repeat(batch, 1,1), self.children_MOI_matrix.repeat(batch,1, 1)
+        momentum_scale1 = -rod_MOI2 @ torch.linalg.pinv(rod_MOI1 + rod_MOI2)
+        momentum_scale2 = rod_MOI1 @ torch.linalg.pinv(rod_MOI1 + rod_MOI2)
+        self.momentum_scale_previous = torch.cat((momentum_scale1, momentum_scale2), dim=1).view(-1, 3, 3)
+
+        rod_MOI1, rod_MOI2 = self.parent_MOI_matrix[parent_MOI_index2].repeat(batch, 1,1), self.children_MOI_matrix.repeat(batch,1, 1)
+        momentum_scale1 = -rod_MOI2 @ torch.linalg.pinv(rod_MOI1 + rod_MOI2)
+        momentum_scale2 = rod_MOI1 @ torch.linalg.pinv(rod_MOI1 + rod_MOI2)
+        self.momentum_scale_next = torch.cat((momentum_scale1, momentum_scale2), dim=1).view(-1, 3, 3)
+
         # Next, we compute coupling mass scale for the branching points
         parent_mass = self.mass_matrix[selected_parent_index][:, rigid_body_coupling_index].view(-1, 3, 3)
         children_mass = self.mass_matrix[selected_children_index, 0]
@@ -162,6 +185,8 @@ class Unit_test_sim(nn.Module):
         mass_scale1 = children_mass @ torch.linalg.inv(parent_mass + children_mass)
         mass_scale2 = parent_mass @ torch.linalg.inv(parent_mass + children_mass)
         self.coupling_mass_scale = torch.cat((mass_scale1.unsqueeze(dim=1), -mass_scale2.unsqueeze(dim=1)), dim=1)
+        self.parent_mass = parent_mass
+        self.children_mass = children_mass
 
     def External_Force(self, mass_matrix
                        ):
@@ -304,14 +329,19 @@ class Unit_test_sim(nn.Module):
 
                 children_vertices = children_vertices.view(-1, self.n_vert, 3)
                 #coupling constraints
-                positions = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                     parent_vertices,
                     children_vertices,
                     self.rigid_body_coupling_index,
                     self.coupling_mass_scale,
+                    self.parent_mass,
+                    self.children_mass,
                     self.selected_parent_index,
-                    self.selected_children_index
+                    self.selected_children_index,
+                    self.bkgrad_coupling
                 )
+                self.bkgrad_coupling.grad_DX_M_Coupling = grad_per_Coupling_itr.grad_DX_M_coupling
+                self.bkgrad_coupling.grad_DX_X_Coupling = grad_per_Coupling_itr.grad_DX_X_coupling
                 #Inextensibility constraint
                 positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
@@ -328,7 +358,7 @@ class Unit_test_sim(nn.Module):
                 )
 
                 self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
-                self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+                # self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
                 self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
 
@@ -371,7 +401,7 @@ class Unit_test_sim(nn.Module):
                 n_branch
             )
             bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
-            bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
+            # bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
             bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
         return positions_ICE
@@ -379,11 +409,27 @@ class Unit_test_sim(nn.Module):
     def generate_preX_trajectory(self, time_horizon, dt):
         # Initialize tensors
         b_DLOs_vertices_traj = torch.zeros(time_horizon, self.batch * self.n_branch, self.n_vert, 3)
+        parent_rod_axis_angle = torch.zeros(1, 3)
+        parent_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
+            parent_rod_axis_angle
+        ).unsqueeze(dim=0).repeat(self.batch, self.n_vert - 1, 1)
+        child_rod_axis_angle = torch.zeros(1, 3)
+        children_rod_orientation = pytorch3d.transforms.rotation_conversions.axis_angle_to_quaternion(
+            child_rod_axis_angle
+        ).unsqueeze(dim=0).repeat(self.batch, len(self.rigid_body_coupling_index), 1)
+        # For parent-child constraints iteration
+        previous_parent_vertices_iteration_edge1 = None
+        previous_parent_vertices_iteration_edge2 = None
+        previous_children_vertices_iteration_edge = None
+
 
         # Initial positions and velocities
         positions_t = self.undeformed_vert.clone().detach()  # shape: [batch, n_vert, 3]
         velocities_t = torch.zeros_like(positions_t)
         positions_t[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
+        previous_parent_vertices_iteration_edge1 = positions_t[self.selected_parent_index].clone()
+        previous_parent_vertices_iteration_edge2 = positions_t[self.selected_parent_index].clone()
+        previous_children_vertices_iteration_edge = positions_t[self.selected_children_index].view(self.batch, -1,self.n_vert,3).clone()
 
         for t in range(time_horizon):
             # Step 1–5 in Algorithm 1:
@@ -392,22 +438,79 @@ class Unit_test_sim(nn.Module):
             positions_t1,_, _ = self.Numerical_Integration(self.mass_matrix, total_force, velocities_t,
                                                    positions_t, self.damping, self.integration_ratio, dt)
             positions_t1_clamp_selection = positions_t1.clone()
-            positions_t1_clamp_selection[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
+            # positions_t1_clamp_selection[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
+            if self.clamp_parent:
+                parent_fix_point = self.undeformed_vert[0, self.parent_clamped_selection]
+                positions_t1_clamp_selection[ 0, self.parent_clamped_selection] = parent_fix_point
+
+            if self.clamp_child1:
+                child1_fix_point = self.undeformed_vert[ 1, self.child1_clamped_selection]
+                positions_t1_clamp_selection[1, self.child1_clamped_selection] = child1_fix_point
+
+            if self.clamp_child2:
+                child2_fix_point = self.undeformed_vert[2, self.child2_clamped_selection]
+                positions_t1_clamp_selection[2, self.child2_clamped_selection] = child2_fix_point
             # Enforce inextensibility constraint (Step 4)
             for _ in range(10):  # constraint_loop
                 parent_vertices = positions_t1_clamp_selection[self.selected_parent_index]
                 children_vertices = positions_t1_clamp_selection[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
 
+                # # Edge1
+                # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
+                #     self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
+                #         parent_vertices,
+                #         parent_rod_orientation,
+                #         previous_parent_vertices_iteration_edge1,
+                #         children_vertices,
+                #         children_rod_orientation,
+                #         previous_children_vertices_iteration_edge,
+                #         self.parent_MOI_matrix,
+                #         self.children_MOI_matrix,
+                #         torch.tensor(self.rigid_body_coupling_index) - 1,
+                #         torch.linspace(0, (children_vertices.size(1) * 2 - 2), len(self.rigid_body_coupling_index)).to(
+                #             torch.int),
+                #         self.momentum_scale_previous
+                #     )
+                #
+                # previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
+                # previous_children_vertices_iteration_edge = children_vertices.clone()
+                #
+                # # Edge2
+                # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
+                #     self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
+                #         parent_vertices,
+                #         parent_rod_orientation,
+                #         previous_parent_vertices_iteration_edge2,
+                #         children_vertices,
+                #         children_rod_orientation,
+                #         previous_children_vertices_iteration_edge,
+                #         self.parent_MOI_matrix,
+                #         self.children_MOI_matrix,
+                #         torch.tensor(self.rigid_body_coupling_index),
+                #         torch.linspace(1, (children_vertices.size(1) * 2 - 1), len(self.rigid_body_coupling_index)).to(
+                #             torch.int),
+                #         self.momentum_scale_next
+                #     )
+                # previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
+                # previous_children_vertices_iteration_edge = children_vertices.clone()
+
+
+
+
+
 
                 children_vertices = children_vertices.view(-1, self.n_vert, 3)
                 # coupling constraints
-                positions = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                positions,_ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                     parent_vertices,
                     children_vertices,
                     self.rigid_body_coupling_index,
                     self.coupling_mass_scale,
+                    self.parent_mass,
+                    self.children_mass,
                     self.selected_parent_index,
-                    self.selected_children_index
+                    self.selected_children_index,
+                    self.bkgrad_coupling
                 )
                 positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,

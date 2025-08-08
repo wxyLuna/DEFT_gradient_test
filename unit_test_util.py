@@ -82,12 +82,12 @@ class TrainSimpleTrajData(Dataset):
             verts = trajectory[batch_idx]  # [T, B, V, 3]
 
             for t in range(T):
-                print('t', t)
+
                 fig = plt.figure(figsize=(8, 6))
                 ax = fig.add_subplot(111, projection='3d')
 
                 for b in range(B):
-                    print('branch number', b)
+
                     points = verts[t, b].numpy()  # shape: [V, 3]
                     undeformed_np = undeformed_vert[b].numpy()  # shape: [V, 3]
 
@@ -97,6 +97,7 @@ class TrainSimpleTrajData(Dataset):
 
                     # Apply mask before plotting
                     points = points[mask_traj]
+
                     undeformed_np = undeformed_np[mask_undeformed]
 
                     # Plot only if there are non-zero points

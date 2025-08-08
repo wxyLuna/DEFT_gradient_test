@@ -24,7 +24,7 @@ n_branch = 3
 n_edge = n_vert - 1
 pbd_iter = 0
 device = "cpu"
-total_time = 150 # Total simulation time in seconds
+total_time = 250 # Total simulation time in seconds
 train_time_horizon = total_time-2
 eval_time_horizon = total_time - 2
 epochs = 1
@@ -155,6 +155,9 @@ for run_id in range(experiment_runs):
                         parent_clamped_selection,
                         child1_clamped_selection,
                         child2_clamped_selection,
+                        clamp_parent,
+                        clamp_child1,
+                        clamp_child2,
                         damping,
                         device)
 

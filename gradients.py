@@ -39,6 +39,19 @@ class BackwardGradientIR:
         self.grad_DX_IR = np.zeros((batch, num_vertices*3, 1), dtype=np.float32)
         return
 
+class BackwardGradientCoupling:
+    def __init__(self, batch, num_vertices):
+        # the batch here is actually num_batch * num_branch
+        self.grad_DX_M_Coupling = None
+        self.grad_DX_X_Coupling = None
+        self.reset(batch, num_vertices)
+        return
+
+    def reset(self, batch, num_vertices):
+        self.grad_DX_M_Coupling = np.zeros((batch, 2*3, 2), dtype=np.float32)
+        self.grad_DX_X_Coupling = np.zeros((batch, 2*3, 6), dtype=np.float32)
+        return
+
 # Gradient Solver
     # Inextensibility Constraint Enforcement
 def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
@@ -82,18 +95,18 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     Edge = X_1 - X_0  # [batch_size, 3, 1]
     Edge_init = X_1_init - X_0_init  # [batch_size, 3, 1]
 
-
     # Compute Edge lengths for each batch
     Edge_length = np.linalg.norm(Edge, axis=1, keepdims=True)  # [batch_size, 1, 1]
     Edge_length_init = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
 
-    # Compute lambda_param for each batch
-    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)  # [batch_size, 1, 1]
+    lambda_param = (Edge_length ** 2 - Edge_length_init ** 2) / (
+                Edge_length ** 2 + Edge_length_init ** 2)  # [batch_size, 1, 1]
 
     # Edge_outer = np.einsum('bi,bj->bij', Edge, Edge)
 
-    scale = (4 * Edge_length_init**2 / (Edge_length**2 + Edge_length_init**2)**2)
+    scale = (4 * Edge_length_init ** 2 / (Edge_length ** 2 + Edge_length_init ** 2) ** 2)
     scaled_value = scale[:, np.newaxis]
+
 
     # Compute gradients for each batch
     grad_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param, np.einsum('bi,bj->bij', Edge, Edge)) * scaled_value
@@ -227,7 +240,14 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     Edge_init_norm = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
 
     # Compute lambda_param for each batch
-    lambda_param = (Edge_norm**2 - Edge_init_norm**2) / (Edge_norm**2 + Edge_init_norm**2)  # [batch_size, 1, 1]
+    # lambda_param = (Edge_norm**2 - Edge_init_norm**2) / (Edge_norm**2 + Edge_init_norm**2)  # [batch_size, 1, 1]
+    denom = Edge_norm ** 2 + Edge_init_norm ** 2  # (B,1,1)
+    eps = 1e-12
+    mask = denom > eps  # (B,1,1)
+
+    lambda_param = np.zeros_like(denom)  # (B,1,1)
+    lambda_param[mask] = ((Edge_norm[mask] ** 2 - Edge_init_norm[mask] ** 2) / denom[mask])
+
 
     Edge = Edge[:,:,np.newaxis]
     # Compute gradients for each batch
@@ -392,7 +412,7 @@ def grad_DX_X_Coupling_batch(M_pc, M_cc):
 
     return grad_DX_X_Coupling
 
-def grad_DX_X_ICEC_batch(M_0, M_1, X_0, X_1):
+def grad_DX_X_ICEC_batch(M_0, M_1):
     """
     Batch version of Gradient of the inextensibility constraint iterative function with respect to the positions X_0 and X_1.
 
@@ -411,20 +431,20 @@ def grad_DX_X_ICEC_batch(M_0, M_1, X_0, X_1):
     the batch here is actually num_batch * num_branch, while the branch is num_branch
     """
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
-    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
     batch_size = M_0.shape[0]
+    M_param = np.zeros((batch_size, 3, 3))
 
     # Compute M_param for each batch
     M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
 
     # Compute gradients for each batch
-    grad_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param)
+    grad_00 = -np.einsum('bij,bjk->bik', M_1, M_param)
 
-    grad_01 = np.einsum('bij,bjk,bkl->bil', M_1, M_param)
+    grad_01 = np.einsum('bij,bjk->bik', M_1, M_param)
 
-    grad_10 = np.einsum('bij,bjk,bkl->bil', M_0, M_param)
+    grad_10 = np.einsum('bij,bjk->bik', M_0, M_param)
 
-    grad_11 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param)
+    grad_11 = -np.einsum('bij,bjk->bik', M_0, M_param)
 
     grad_DX_X = np.concatenate(
         (np.concatenate((grad_00, grad_01), axis=2),
@@ -459,13 +479,13 @@ def grad_DX_M_ICEC_batch(M_0, M_1, X_0, X_1):
     # Compute M_param for each batch
     M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
 
-    # Compute Edge and Edge_init for each batch
-    Edge = X_1 - X_0  # [batch_size, 3, 1]
+    # Compute Edge and Edge_init for each batch ## zero-mask not applied yet
+    Edge = X_1 - X_0  # [n_batch, 3, 1]
 
-    Edge = Edge[:,:,np.newaxis]
+    Edge = np.transpose(Edge, (0, 2, 1))
     # Compute gradients for each batch
-    grad_M_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param @ M_param, Edge)  # [batch_size, 3, 1]
-    grad_M_01 = np.einsum('bij,bjk->bik', (np.eye(3) - M_1 @ M_param), M_param @ Edge)  # [batch_size, 3, 1]
+    grad_M_00 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge)
+    grad_M_01 = np.einsum('bij,bjk->bik', (np.eye(3) - M_1 @ M_param), (M_param @ Edge))
     grad_M_10 = -np.einsum('bij,bjk->bik', (np.eye(3) - M_0 @ M_param), M_param @ Edge)  # [batch_size, 3, 1]
     grad_M_11 = np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge)  # [batch_size, 3, 1]
 
