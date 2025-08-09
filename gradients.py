@@ -54,7 +54,7 @@ class BackwardGradientCoupling:
 
 # Gradient Solver
     # Inextensibility Constraint Enforcement
-def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
     """
     Batch version of Gradient of the inextensibility constraint iterative function with respect to the positions X_0 and X_1.
 
@@ -92,21 +92,22 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
         M_param[i] = np.linalg.inv(sum_M)
 
     # Compute Edge and Edge_init for each batch
-    Edge = X_1 - X_0  # [batch_size, 3, 1]
-    Edge_init = X_1_init - X_0_init  # [batch_size, 3, 1]
+    Edge = np.zeros((X_1 - X_0).shape)
+    Edge_init = np.zeros((X_1_init - X_0_init).shape)
+    Edge[mask] = X_1[mask] - X_0[mask]  # [batch_size, 3, 1]
+    Edge_init[mask] = X_1_init[mask] - X_0_init[mask]
 
     # Compute Edge lengths for each batch
     Edge_length = np.linalg.norm(Edge, axis=1, keepdims=True)  # [batch_size, 1, 1]
     Edge_length_init = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
 
-    lambda_param = (Edge_length ** 2 - Edge_length_init ** 2) / (
-                Edge_length ** 2 + Edge_length_init ** 2)  # [batch_size, 1, 1]
+    denom = Edge_length ** 2 + Edge_length_init ** 2  # [B,1,1]
 
-    # Edge_outer = np.einsum('bi,bj->bij', Edge, Edge)
+    lambda_param = (Edge_length ** 2 - Edge_length_init** 2) / denom
 
-    scale = (4 * Edge_length_init ** 2 / (Edge_length ** 2 + Edge_length_init ** 2) ** 2)
-    scaled_value = scale[:, np.newaxis]
+    scale = 4 * (Edge_length_init ** 2) / (denom ** 2)
 
+    scaled_value = scale  # keep as [B,1,1] for clean broadcasting
 
     # Compute gradients for each batch
     grad_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param, np.einsum('bi,bj->bij', Edge, Edge)) * scaled_value
@@ -128,7 +129,9 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     )
 
 
-    return grad_DX_X
+
+
+    return grad_DX_X[mask]
 
 def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """

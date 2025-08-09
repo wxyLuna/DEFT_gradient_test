@@ -71,6 +71,24 @@ class Unit_test_sim(nn.Module):
         selected_children_index = [i for i in range(1, batch * n_branch) if i % n_branch != 0]
         self.selected_children_index = selected_children_index
 
+        # Expand clamped vertex selection for the parent across the batch
+        batch_indices = self.selected_parent_index.unsqueeze(1).expand(-1, parent_clamped_selection.size(0))
+        parent_indices = parent_clamped_selection.unsqueeze(0).expand(self.selected_parent_index.size(0), -1)
+
+        # Child1/Child2 clamped indices
+        batch_child1_indices = self.selected_child1_index
+        child1_indices = child1_clamped_selection
+        batch_child2_indices = self.selected_child2_index
+        child2_indices = child2_clamped_selection
+        # Flatten them for easier indexing
+        self.batch_indices_flat = batch_indices.reshape(-1)
+        self.parent_indices_flat = parent_indices.reshape(-1)
+
+        self.batch_child1_indices_flat = batch_child1_indices.reshape(-1)
+        self.child1_indices_flat = child1_indices.reshape(-1)
+
+        self.batch_child2_indices_flat = batch_child2_indices.reshape(-1)
+        self.child1_indices_flat = child2_indices.reshape(-1)  # reusing variable name but it's for child2
 
         self.b_undeformed_vert = b_undeformed_vert.clone()
         self.zero_mask = torch.all(self.b_undeformed_vert[:, 1:] == 0, dim=-1)
@@ -319,8 +337,22 @@ class Unit_test_sim(nn.Module):
                                                                positions_input, self.damping, self.integration_ratio, dt)
             self.bkgrad_damping.grad_DX_damping = bkgrad_damping
             self.bkgrad_IR.grad_DX_IR = bkgrad_IR
-            #enforce clamped vertices
-            positions[:, self.parent_clamped_selection, :] = self.undeformed_vert[:,self.parent_clamped_selection,:].detach()
+            if self.clamp_parent:
+                parent_fix_point = target_traj[:, :, 0, self.parent_clamped_selection]
+                parent_fix = parent_fix_point[:, t].reshape(-1, 3)
+                positions[self.batch_indices_flat, self.parent_indices_flat] = parent_fix
+
+            if self.clamp_child1:
+                child1_fix_point = target_traj[:, :, 1, self.child1_clamped_selection]
+                c1_fix = child1_fix_point[:, t].reshape(-1, 3)
+                positions[self.batch_child1_indices_flat, self.child1_indices_flat] = c1_fix
+
+            if self.clamp_child2:
+                child2_fix_point = target_traj[:, :, 2, self.child2_clamped_selection]
+                c2_fix = child2_fix_point[:, t].reshape(-1, 3)
+                positions[self.batch_child2_indices_flat, self.child2_indices_flat] = c2_fix
+
+
             # ___Analytical gradient & Center values for inextensibility constraint enforcement___
 
             for _ in range(constraint_loop):
@@ -340,8 +372,8 @@ class Unit_test_sim(nn.Module):
                     self.selected_children_index,
                     self.bkgrad_coupling
                 )
-                self.bkgrad_coupling.grad_DX_M_Coupling = grad_per_Coupling_itr.grad_DX_M_coupling
-                self.bkgrad_coupling.grad_DX_X_Coupling = grad_per_Coupling_itr.grad_DX_X_coupling
+
+
                 #Inextensibility constraint
                 positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
@@ -400,9 +432,9 @@ class Unit_test_sim(nn.Module):
                 bkgrad,
                 n_branch
             )
-            bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+            # bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
             # bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
-            bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+            # bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
         return positions_ICE
 
@@ -512,6 +544,7 @@ class Unit_test_sim(nn.Module):
                     self.selected_children_index,
                     self.bkgrad_coupling
                 )
+
                 positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                     self.batch,
                     positions,

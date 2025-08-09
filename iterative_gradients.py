@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init,mask):
     """
     Batch version of Inextensibility Constraint Iterative Function
 
@@ -23,6 +23,8 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     X_0_init, X_1_init = X_0_init.detach().cpu().numpy(), X_1_init.detach().cpu().numpy()
 
 
+
+
     # Compute M_param for each batch
     M_param = np.zeros((batch_size, 3, 3))
 
@@ -36,15 +38,15 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
         M_param[i] = np.linalg.inv(sum_M)
 
     # Compute Edge and Edge_init for each batch
-
-    Edge = X_1 - X_0  # [batch_size, 3, 1]
+    Edge = np.zeros((X_1 - X_0).shape)
+    Edge[mask] = X_1[mask] - X_0[mask]  # [batch_size, 3, 1]
     Edge = np.expand_dims(Edge,axis=-1)
     # note rounding error in IC
 
 
 
-
-    Edge_init = X_1_init - X_0_init  # [batch_size, 3, 1]
+    Edge_init = np.zeros((X_1_init - X_0_init).shape)
+    Edge_init[mask] = X_1_init[mask] - X_0_init[mask]  # [batch_size, 3, 1]
     Edge_init=np.expand_dims(Edge_init,axis=-1)
 
     # Compute Edge lengths for each batch
@@ -53,9 +55,7 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
 
     # Compute lambda_param for each batch
-    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)  # [batch_size, 1, 1]
-    # print('lambda_param',lambda_param)
-
+    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
 
     # Compute DX_0 and DX_1 for each batch
     DX_0 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, Edge) * lambda_param  # [batch_size, 3, 1]

@@ -252,6 +252,7 @@ class constraints_enforcement(nn.Module):
 
         return rotation_matrix
 
+
     def Inextensibility_Constraint_Enforcement(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
                                                scale, mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch):
         """
@@ -293,7 +294,6 @@ class constraints_enforcement(nn.Module):
             l = torch.zeros_like(nominal_length_square[:, i])
 
             mask = zero_mask_num[:, i].bool()
-
 
             # l = 1 - 2L^2 / (L^2 + |edge|^2)
             l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
@@ -337,23 +337,27 @@ class constraints_enforcement(nn.Module):
             DX_0, DX_1 = func_DX_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],mask
             )
+
             DX_0 /= scale[:, i]
-            DX_1  /= scale[:, i]
+            DX_1 /= scale[:, i]
 
             # print('multiple within IC', DX_0 / delta_x[:, 0, :].unsqueeze(-1),DX_1 / delta_x[:, 1, :].unsqueeze(-1))
+            grad_DX_X_step=np.zeros((n_branch * batch, 6, 6))
 
             # ___Update the gradient for the current vertices___
-            grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
+            grad_DX_X_step[mask] = gradients.grad_DX_X_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],mask
             )
 
             grad_DX_X_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1, 6).view(n_branch,6,6)) ## this may need to be checked
 
+            # grad_DX_X_step = np.divide(grad_DX_X_step, scale_np,out=np.zeros_like(grad_DX_X_step),where=mask)
             grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2), :].copy()
+
 
             grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
             grad_step_DX_X = np.concatenate((
@@ -361,6 +365,15 @@ class constraints_enforcement(nn.Module):
                 grad_DX_X_step,
                 np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
             ), axis=2)
+            # if np.isnan(grad_interest_DX_X).any():
+            #     print("NaN in grad_interest_DX_X")
+            # if np.isinf(grad_interest_DX_X).any():
+            #     print("Inf in grad_interest_DX_X")
+            #
+            # if np.isnan(grad_chain_passed_DX_X).any():
+            #     print("NaN in grad_chain_passed_DX_X")
+            # if np.isinf(grad_chain_passed_DX_X).any():
+            #     print("Inf in grad_chain_passed_DX_X")
 
             grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X
 
