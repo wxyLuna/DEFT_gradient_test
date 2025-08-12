@@ -118,9 +118,9 @@ class Unit_test_sim(nn.Module):
         self.batched_m_restEdgeL_neg = self.m_restEdgeL_neg.repeat(self.batch, 1, 1).view(-1, n_edge)
         self.undeformed_vert = nn.Parameter(self.b_undeformed_vert)
         ## for storing the old gradients from inextensibility enforcement
-        self.bkgrad = gradients.BackwardGradientIC(self.batch *n_branch, n_vert)
-        self.bkgrad_neg = gradients.BackwardGradientIC(self.batch * n_branch, n_vert)
-        self.bkgrad_pos = gradients.BackwardGradientIC(self.batch * n_branch, n_vert)
+        self.bkgrad = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
+        self.bkgrad_neg = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
+        self.bkgrad_pos = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
         ## for storing the old gradients from Numerical integration
         self.bkgrad_damping = gradients.BackwardGradientDamping(self.batch, n_branch, n_vert)
         self.bkgrad_IR = gradients.BackwardGradientIR(self.batch*n_branch, n_vert)
@@ -318,7 +318,7 @@ class Unit_test_sim(nn.Module):
 
         for t in range(int(time_horizon)):
 
-            self.bkgrad.reset(self.batch,self.n_vert)
+            self.bkgrad.reset(self.batch,self.n_branch,self.n_vert)
             self.bkgrad_damping.reset(self.batch,self.n_branch, self.n_vert)
             self.bkgrad_IR.reset(self.batch, self.n_vert)
 
@@ -362,17 +362,21 @@ class Unit_test_sim(nn.Module):
                 children_vertices = children_vertices.view(-1, self.n_vert, 3)
                 #coupling constraints
                 positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                    self.batch,
+                    self.n_branch,
                     parent_vertices,
                     children_vertices,
                     self.rigid_body_coupling_index,
                     self.coupling_mass_scale,
-                    self.parent_mass,
-                    self.children_mass,
+                    self.mass_matrix[self.selected_parent_index],
+                    self.mass_matrix[self.selected_children_index],
                     self.selected_parent_index,
                     self.selected_children_index,
-                    self.bkgrad_coupling
+                    self.bkgrad
                 )
-
+                self.bkgrad.grad_DX_X = grad_per_Coupling_itr.grad_DX_X
+                self.bkgrad.grad_DX_M = grad_per_Coupling_itr.grad_DX_M
+                # print('self.bkgrad.grad_DX_X',self.bkgrad.grad_DX_X)
 
                 #Inextensibility constraint
                 positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
@@ -394,7 +398,6 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
 
-
             # ___Continue with the simulation using the enforced positions___
             velocities = (positions_ICE - prev_positions) / dt
 
@@ -408,9 +411,6 @@ class Unit_test_sim(nn.Module):
 
             # positions_traj[:, t] = positions.detach()
             positions_old = positions_ICE.clone()
-
-
-
 
         return traj_loss_eval, total_loss
 
@@ -459,9 +459,9 @@ class Unit_test_sim(nn.Module):
         positions_t = self.undeformed_vert.clone().detach()  # shape: [batch, n_vert, 3]
         velocities_t = torch.zeros_like(positions_t)
         positions_t[:, self.parent_clamped_selection, :] = self.undeformed_vert[:, self.parent_clamped_selection,:].detach()
-        previous_parent_vertices_iteration_edge1 = positions_t[self.selected_parent_index].clone()
-        previous_parent_vertices_iteration_edge2 = positions_t[self.selected_parent_index].clone()
-        previous_children_vertices_iteration_edge = positions_t[self.selected_children_index].view(self.batch, -1,self.n_vert,3).clone()
+        # previous_parent_vertices_iteration_edge1 = positions_t[self.selected_parent_index].clone()
+        # previous_parent_vertices_iteration_edge2 = positions_t[self.selected_parent_index].clone()
+        # previous_children_vertices_iteration_edge = positions_t[self.selected_children_index].view(self.batch, -1,self.n_vert,3).clone()
 
         for t in range(time_horizon):
             # Step 1–5 in Algorithm 1:
@@ -534,15 +534,17 @@ class Unit_test_sim(nn.Module):
                 children_vertices = children_vertices.view(-1, self.n_vert, 3)
                 # coupling constraints
                 positions,_ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                    self.batch,
+                    self.n_branch,
                     parent_vertices,
                     children_vertices,
                     self.rigid_body_coupling_index,
                     self.coupling_mass_scale,
-                    self.parent_mass,
-                    self.children_mass,
+                    self.mass_matrix[self.selected_parent_index],
+                    self.mass_matrix[self.selected_children_index],
                     self.selected_parent_index,
                     self.selected_children_index,
-                    self.bkgrad_coupling
+                    self.bkgrad
                 )
 
                 positions_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(

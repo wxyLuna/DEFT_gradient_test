@@ -3,18 +3,19 @@ import torch
 
 # Gradient Saver
 class BackwardGradientIC:
-    def __init__(self, batch, num_vertices):
+    def __init__(self, batch, num_branch,num_vertices):
         # the batch here is actually num_batch * num_branch
         self.grad_DX_X = None
         self.grad_DX_Xinit = None
         self.grad_DX_M = None
-        self.reset(batch, num_vertices)
+        self.reset(batch, num_branch, num_vertices)
+
         return
 
-    def reset(self, batch, num_vertices):
-        self.grad_DX_X = np.zeros((batch, num_vertices*3, num_vertices*3), dtype=np.float32)
-        self.grad_DX_Xinit = np.zeros((batch, num_vertices*3, num_vertices*3), dtype=np.float32)
-        self.grad_DX_M = np.zeros((batch, num_vertices*3, num_vertices), dtype=np.float32)
+    def reset(self, batch,num_branch, num_vertices):
+        self.grad_DX_X = np.zeros((batch*num_branch, num_vertices*3, num_vertices*3), dtype=np.float32) ## change dimension
+        self.grad_DX_Xinit = np.zeros((batch*num_branch, num_vertices*3, num_vertices*3), dtype=np.float32)
+        self.grad_DX_M = np.zeros((batch*num_branch, num_vertices*3, num_vertices), dtype=np.float32)## change dimension
         return
 
 class BackwardGradientDamping:
@@ -94,8 +95,8 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
     # Compute Edge and Edge_init for each batch
     Edge = np.zeros((X_1 - X_0).shape)
     Edge_init = np.zeros((X_1_init - X_0_init).shape)
-    Edge[mask] = X_1[mask] - X_0[mask]  # [batch_size, 3, 1]
-    Edge_init[mask] = X_1_init[mask] - X_0_init[mask]
+    Edge = X_1 - X_0  # [batch_size, 3, 1]
+    Edge_init= X_1_init- X_0_init
 
     # Compute Edge lengths for each batch
     Edge_length = np.linalg.norm(Edge, axis=1, keepdims=True)  # [batch_size, 1, 1]
@@ -110,28 +111,30 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
     scaled_value = scale  # keep as [B,1,1] for clean broadcasting
 
     # Compute gradients for each batch
-    grad_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param, np.einsum('bi,bj->bij', Edge, Edge)) * scaled_value
-    grad_00 -= M_1 @ M_param * lambda_param[:, np.newaxis]
+    grad_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param, np.einsum('bik,bjk->bij', Edge, Edge)) * scaled_value
+    grad_00 -= M_1 @ M_param * lambda_param
 
-    grad_01 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, np.einsum('bi,bj->bij', Edge, Edge)) * scaled_value
-    grad_01 += M_1 @ M_param * lambda_param[:, np.newaxis]
+    grad_01 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, np.einsum('bik,bjk->bij', Edge, Edge)) * scaled_value
+    grad_01 += M_1 @ M_param * lambda_param
 
-    grad_10 = np.einsum('bij,bjk,bkl->bil', M_0, M_param, np.einsum('bi,bj->bij', Edge, Edge)) * scaled_value
-    grad_10 += M_0 @ M_param * lambda_param[:, np.newaxis]
+    grad_10 = np.einsum('bij,bjk,bkl->bil', M_0, M_param, np.einsum('bik,bjk->bij', Edge, Edge)) * scaled_value
+    grad_10 += M_0 @ M_param * lambda_param
 
-    grad_11 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param,np.einsum('bi,bj->bij', Edge, Edge)) * scaled_value
-    grad_11 -= M_0 @ M_param * lambda_param[:, np.newaxis]
+    grad_11 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param,np.einsum('bik,bjk->bij', Edge, Edge)) * scaled_value
+    grad_11 -= M_0 @ M_param * lambda_param
 
     grad_DX_X = np.concatenate(
         (np.concatenate((grad_00, grad_01), axis=2),
          np.concatenate((grad_10, grad_11), axis=2)),
         axis=1
     )
+    print('grad_DX_X shape:', grad_DX_X.shape)
 
 
 
 
-    return grad_DX_X[mask]
+
+    return grad_DX_X
 
 def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """
@@ -197,7 +200,7 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
     return grad_DX_X_init
 
-def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
+def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init,mask):
     """
     Batch version of Gradient of the inextensibility constraint iterative function with respect to the mass matrices M_0 and M_1.
 
@@ -243,27 +246,22 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     Edge_init_norm = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
 
     # Compute lambda_param for each batch
-    # lambda_param = (Edge_norm**2 - Edge_init_norm**2) / (Edge_norm**2 + Edge_init_norm**2)  # [batch_size, 1, 1]
-    denom = Edge_norm ** 2 + Edge_init_norm ** 2  # (B,1,1)
-    eps = 1e-12
-    mask = denom > eps  # (B,1,1)
+    lambda_param = (Edge_norm**2 - Edge_init_norm**2) / (Edge_norm**2 + Edge_init_norm**2)  # [batch_size, 1, 1]
 
-    lambda_param = np.zeros_like(denom)  # (B,1,1)
-    lambda_param[mask] = ((Edge_norm[mask] ** 2 - Edge_init_norm[mask] ** 2) / denom[mask])
-
-
-    Edge = Edge[:,:,np.newaxis]
     # Compute gradients for each batch
-    grad_M_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param @ M_param, Edge) * lambda_param[:, np.newaxis]  # [batch_size, 3, 1]
-    grad_M_01 = np.einsum('bij,bjk->bik', (np.eye(3) - M_1 @ M_param), M_param @ Edge) * lambda_param[:, np.newaxis]  # [batch_size, 3, 1]
-    grad_M_10 = -np.einsum('bij,bjk->bik', (np.eye(3) - M_0 @ M_param), M_param @ Edge) * lambda_param[:, np.newaxis]  # [batch_size, 3, 1]
-    grad_M_11 = np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge) * lambda_param[:, np.newaxis]  # [batch_size, 3, 1]
+    grad_M_00 = -np.einsum('bij,bjk,bkl->bil', M_1, M_param @ M_param, Edge) * lambda_param # [batch_size, 3, 1]
+    grad_M_01 = np.einsum('bij,bjk->bik', (np.eye(3) - M_1 @ M_param), M_param @ Edge) * lambda_param # [batch_size, 3, 1]
+    grad_M_10 = -np.einsum('bij,bjk->bik', (np.eye(3) - M_0 @ M_param), M_param @ Edge) * lambda_param  # [batch_size, 3, 1]
+    grad_M_11 = np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge) * lambda_param # [batch_size, 3, 1]
 
     grad_DX_M = np.concatenate(
         (np.concatenate((grad_M_00, grad_M_01), axis=2),
          np.concatenate((grad_M_10, grad_M_11), axis=2)),
         axis=1
     )
+
+
+
     
     return grad_DX_M
 
@@ -339,103 +337,25 @@ def grad_DX_IR_batch(dt, b_DLOs_velocity, mass_matrix, force, damping):
 
     return grad_DX_IR
 
-def grad_DX_M_Coupling_batch(M_pc, M_cc, X_pc, X_cc):
-    """
-    Batch version of Gradient of the coupling constraint iterative function with respect to the mass matrices M_0 and M_1.
-
-    # Inputs:
-    - M_pc: [batch_size, 3, 3] coupling mass matrix of parent branch coupling vertex
-    - M_cc: [batch_size, 3, 3] coupling mass matrix of children branch coupling vertex
-    - X_pc: [batch_size, 3, 1] position of parent branch coupling vertex
-    - X_cc: [batch_size, 3, 1] position of children branch coupling vertex
-
-    # Outputs:
-    - grad_M_pc_pc: [batch_size, 3, 1] gradient of DX_pc with respect to M_pc
-    - grad_M_pc_cc: [batch_size, 3, 1] gradient of DX_pc with respect to M_cc
-    - grad_M_cc_pc: [batch_size, 3, 1] gradient of DX_cc with respect to M_pc
-    - grad_M_cc_cc: [batch_size, 3, 1] gradient of DX_cc with respect to M_cc
-
-    - grad_DX_M_Coupling:[batch_size, 6, 2] gradient of DX_M_Coupling with respect to M_pc and M_cc
-
-    """
-
-    batch_size = M_pc.shape[0]
-    M_pc = M_pc.detach().cpu().numpy()
-    M_cc = M_cc.detach().cpu().numpy()
-    X_pc = X_pc.detach().cpu().numpy()
-    X_cc = X_cc.detach().cpu().numpy()
-
-    inv = np.linalg.inv(M_pc + M_cc)
-    grad_M_pc_pc = - M_cc @ inv @ inv @ (X_cc - X_pc)
-    grad_M_pc_cc = (1-M_cc @ inv) @ inv @ (X_cc - X_pc)
-    grad_M_cc_pc = (1-M_pc @ inv) @ inv @ (X_cc - X_pc)
-    grad_M_cc_cc = M_pc @ inv @ inv @ (X_cc - X_pc)
-
-    grad_DX_M_Coupling = np.concatenate(
-        (np.concatenate((grad_M_pc_pc, grad_M_pc_cc), axis=2),
-         np.concatenate((grad_M_cc_pc, grad_M_cc_cc), axis=2)),
-        axis=1
-    )
-    return grad_DX_M_Coupling
-
-def grad_DX_X_Coupling_batch(M_pc, M_cc):
-    """
-    Batch version of Gradient of the coupling constraint iterative function with respect to the positions X_pc and X_cc.
-
-    # Inputs:
-    - M_pc: [batch_size, 3, 3] coupling mass matrix of parent branch coupling vertex
-    - M_cc: [batch_size, 3, 3] coupling mass matrix of children branch coupling vertex
-
-    # Outputs:
-    - grad_X_pc_pc: [batch_size, 3, 3] gradient of DX_pc with respect to X_pc
-    - grad_X_pc_cc: [batch_size, 3, 3] gradient of DX_pc with respect to X_cc
-    - grad_X_cc_pc: [batch_size, 3, 3] gradient of DX_cc with respect to X_pc
-    - grad_X_cc_cc: [batch_size, 3, 3] gradient of DX_cc with respect to X_cc
-
-    - grad_DX_X_Coupling: [batch_size, 6, 6] gradient of DX_X_Coupling with respect to X_pc and X_cc
-
-    """
-
-    batch_size = M_pc.shape[0]
-    M_pc = M_pc.detach().cpu().numpy()
-    M_cc = M_cc.detach().cpu().numpy()
-
-    inv = np.linalg.inv(M_pc + M_cc)
-
-    grad_X_pc_pc = - M_cc @ inv
-    grad_X_pc_cc = M_cc @ inv
-    grad_X_cc_pc = M_pc @ inv
-    grad_X_cc_cc = -M_pc @ inv
-
-    grad_DX_X_Coupling = np.concatenate(
-        (np.concatenate((grad_X_pc_pc, grad_X_pc_cc), axis=2),
-         np.concatenate((grad_X_cc_pc, grad_X_cc_cc), axis=2)),
-        axis=1
-    )
-
-    return grad_DX_X_Coupling
-
 def grad_DX_X_ICEC_batch(M_0, M_1):
     """
     Batch version of Gradient of the inextensibility constraint iterative function with respect to the positions X_0 and X_1.
 
     # Inputs:
-    - M_0: [batch_size, 3, 3] mass matrix of vertex i
-    - M_1: [batch_size, 3, 3] mass matrix of vertex i+1
-    - X_0: [batch_size, 3, 1] position of vertex i
-    - X_1: [batch_size, 3, 1] position of vertex i+1
+    - M_0: [batch*n_parent_branch, n_vertices, 3, 3] mass matrix at two coupling index of parent branch
+    - M_1: [batch*n_child_branch, 3, 3] mass matrix of the first index of two children branches
+
 
     # Outputs:
-    - grad_00: [batch_size, 3, 3] gradient of DX_0 with respect to X_0
-    - grad_01: [batch_size, 3, 3] gradient of DX_0 with respect to X_1
-    - grad_10: [batch_size, 3, 3] gradient of DX_1 with respect to X_0
-    - grad_11: [batch_size, 3, 3] gradient of DX_1 with respect to X_1
+    - grad_X_pc_pc: [batch, 3, 3] gradient of DX_pc with respect to parent branch mass matrix at two coupling index M_pc
+    - grad_X_pc_cc: [batch, 3, 3] gradient of DX_pc with respect to two children branches mass matrix at two coupling index M_cc
+    - grad_X_cc_pc: [batch, 3, 3] gradient of two children branch's DX_cc with respect to parent branch mass matrix M_pc
+    - grad_X_cc_cc: [batch, 3, 3] gradient of two children branch's DX_cc with respect to their own mass matrix M_cc
 
     the batch here is actually num_batch * num_branch, while the branch is num_branch
     """
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
     batch_size = M_0.shape[0]
-    M_param = np.zeros((batch_size, 3, 3))
 
     # Compute M_param for each batch
     M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
@@ -457,45 +377,46 @@ def grad_DX_X_ICEC_batch(M_0, M_1):
 
     return grad_DX_X
 
-def grad_DX_M_ICEC_batch(M_0, M_1, X_0, X_1):
+def grad_DX_M_ICEC_batch(M_pc, M_cc, X_pc, X_cc):
     """
     Batch version of Gradient of the inextensibility constraint iterative function with respect to the mass matrices M_0 and M_1.
 
     # Inputs:
-    - M_0: [batch_size, 3, 3] mass matrix of vertex i
-    - M_1: [batch_size, 3, 3] mass matrix of vertex i+1
-    - X_0: [batch_size, 3, 1] position of vertex i
-    - X_1: [batch_size, 3, 1] position of vertex i+1
+    - M_pc: [batch, n_vertices, 3, 3] mass matrix at two coupling index of parent branch
+    - M_cc: [batch, 3, 3] mass matrix of the first index of two children branches
+    - X_pc: [batch, 3, 1] position of vertex at two coupling index of parent branch
+    - X_cc: [batch, 3, 1] position of vertex of the first index of two children branches
 
     # Outputs:
-    - grad_M_00: [batch_size, 3, 1] gradient of DX_0 with respect to M_0
-    - grad_M_01: [batch_size, 3, 1] gradient of DX_0 with respect to M_1
-    - grad_M_10: [batch_size, 3, 1] gradient of DX_1 with respect to M_0
-    - grad_M_11: [batch_size, 3, 1] gradient of DX_1 with respect to M_1
+    - grad_M_pc_pc: [batch, 3, 1] gradient of DM_pc with respect to parent branch mass matrix at two coupling index M_pc
+    - grad_M_pc_cc: [batch, 3, 1] gradient of DM_pc with respect to two children branches mass matrix at two coupling index M_cc
+    - grad_M_cc_pc: [batch, 3, 1] gradient of two children branch's DM_cc with respect to parent branch mass matrix M_pc
+    - grad_M_cc_cc: [batch, 3, 1] gradient of two children branch's DM_cc with respect to their own mass matrix M_cc
 
     the batch here is actually num_batch * num_branch, while the branch is num_branch
     """
-    batch_size = M_0.shape[0]
-    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
-    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+
+    M_pc, M_cc = M_pc.detach().cpu().numpy(), M_cc.detach().cpu().numpy()
+    X_pc, X_cc = X_pc.detach().cpu().numpy(), X_cc.detach().cpu().numpy()
 
     # Compute M_param for each batch
-    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+    M_param = np.linalg.inv(M_pc + M_cc)  # [2, 3, 3]
 
     # Compute Edge and Edge_init for each batch ## zero-mask not applied yet
-    Edge = X_1 - X_0  # [n_batch, 3, 1]
+    Edge = X_cc - X_pc  # [2, 3, 1]
 
-    Edge = np.transpose(Edge, (0, 2, 1))
+
     # Compute gradients for each batch
-    grad_M_00 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge)
-    grad_M_01 = np.einsum('bij,bjk->bik', (np.eye(3) - M_1 @ M_param), (M_param @ Edge))
-    grad_M_10 = -np.einsum('bij,bjk->bik', (np.eye(3) - M_0 @ M_param), M_param @ Edge)  # [batch_size, 3, 1]
-    grad_M_11 = np.einsum('bij,bjk,bkl->bil', M_0, M_param @ M_param, Edge)  # [batch_size, 3, 1]
+    grad_M_pc_pc = -np.einsum('bij,bjk,bkl->bil', M_cc, M_param @ M_param, Edge)
+    grad_M_pc_cc = np.einsum('bij,bjk->bik', (np.eye(3) - M_cc @ M_param), (M_param @ Edge))
+    grad_M_cc_pc = -np.einsum('bij,bjk->bik', (np.eye(3) - M_pc @ M_param), M_param @ Edge)  # [batch_size, 3, 1]
+    grad_M_cc_cc = np.einsum('bij,bjk,bkl->bil', M_pc, M_param @ M_param, Edge)  # [batch_size, 3, 1]
 
     grad_DX_M = np.concatenate(
-        (np.concatenate((grad_M_00, grad_M_01), axis=2),
-         np.concatenate((grad_M_10, grad_M_11), axis=2)),
+        (np.concatenate((grad_M_pc_pc, grad_M_pc_cc), axis=2),
+         np.concatenate((grad_M_cc_pc, grad_M_cc_cc), axis=2)),
         axis=1
     )
+
     
     return grad_DX_M

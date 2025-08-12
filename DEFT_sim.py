@@ -1248,9 +1248,7 @@ class DEFT_sim(nn.Module):
                     self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                     self.bkgrad.grad_DX_Xinit = grad_per_ICitr.grad_DX_Xinit
                     self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
-                    print('grad_DX_X',self.bkgrad.grad_DX_X)
-                    print('grad_DX_Xinit',self.bkgrad.grad_DX_Xinit)
-                    print('grad_DX_M',self.bkgrad.grad_DX_M)
+
 
 
             # 6) Update velocities based on final positions + compute losses
