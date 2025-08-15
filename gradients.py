@@ -5,6 +5,9 @@ import torch
 class BackwardGradientIC:
     def __init__(self, batch, num_branch,num_vertices):
         # the batch here is actually num_batch * num_branch
+        self.batch = batch
+        self.num_branch = num_branch
+        self.num_vertices = num_vertices
         self.grad_DX_X = None
         self.grad_DX_Xinit = None
         self.grad_DX_M = None
@@ -13,9 +16,9 @@ class BackwardGradientIC:
         return
 
     def reset(self, batch,num_branch, num_vertices):
-        self.grad_DX_X = np.zeros((batch*num_branch, num_vertices*3, num_vertices*3), dtype=np.float32) ## change dimension
-        self.grad_DX_Xinit = np.zeros((batch*num_branch, num_vertices*3, num_vertices*3), dtype=np.float32)
-        self.grad_DX_M = np.zeros((batch*num_branch, num_vertices*3, num_vertices), dtype=np.float32)## change dimension
+        self.grad_DX_X = np.zeros((batch, num_branch*num_vertices*3, num_branch*num_vertices*3), dtype=np.float32) ## change dimension
+        # self.grad_DX_Xinit = np.zeros((batch, num_branch*num_vertices*3, num_branch*num_vertices*3), dtype=np.float32)
+        self.grad_DX_M = np.zeros((batch, num_branch*num_vertices*3, num_branch*num_vertices), dtype=np.float32)## change dimension
         return
 
 class BackwardGradientDamping:
@@ -360,7 +363,7 @@ def grad_DX_X_ICEC_batch(M_0, M_1):
     # Compute M_param for each batch
     M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
 
-    # Compute gradients for each batch
+
     grad_00 = -np.einsum('bij,bjk->bik', M_1, M_param)
 
     grad_01 = np.einsum('bij,bjk->bik', M_1, M_param)
@@ -375,7 +378,7 @@ def grad_DX_X_ICEC_batch(M_0, M_1):
         axis=1
     )
 
-    return grad_DX_X
+    return grad_00, grad_01, grad_10, grad_11, grad_DX_X
 
 def grad_DX_M_ICEC_batch(M_pc, M_cc, X_pc, X_cc):
     """
@@ -419,4 +422,4 @@ def grad_DX_M_ICEC_batch(M_pc, M_cc, X_pc, X_cc):
     )
 
     
-    return grad_DX_M
+    return grad_M_pc_pc, grad_M_pc_cc, grad_M_cc_pc, grad_M_cc_cc, grad_DX_M
