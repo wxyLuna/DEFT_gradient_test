@@ -440,35 +440,32 @@ class constraints_enforcement(nn.Module):
         grad_per_ICEC = bkgrad
 
 
-        for i in range(grad_per_ICEC.num_vertices):
+        for i, child_idx in zip(coupling_index, selected_children_index):
+            pm = parent_mass[:, i]  # (batch, 3, 3)
+            cm = children_mass[(child_idx-1)*batch:(child_idx*batch), 0]  # (batch, 3, 3)
+            pv = parent_vertices[:, i:i + 1, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+            cv = child_vertices[(child_idx-1)*batch:(child_idx*batch), 0, :].reshape(batch, 3, 1)  # (batch, 3, 1)
 
-            # pick vertices
-            for child_idx in selected_children_index:
-                pm = parent_mass[:, i]  # (batch, 3, 3)
-                cm = children_mass[(child_idx-1)*batch:(child_idx*batch), i]  # (batch, 3, 3)
-                pv = parent_vertices[:, i:i + 1, :].reshape(batch, 3, 1)  # (batch, 3, 1)
-                cv = child_vertices[(child_idx-1)*batch:(child_idx*batch), i, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+            grad_X_pc_pc,grad_X_pc_cc,grad_X_cc_pc,grad_X_cc_cc, grad_DX_X = gradients.grad_DX_X_ICEC_batch(pm, cm)  # (batch, 6, 6)
+            grad_M_pc_pc, grad_M_pc_cc, grad_M_cc_pc, grad_M_cc_cc, grad_DX_M = gradients.grad_DX_M_ICEC_batch(pm, cm, pv, cv)
 
-                grad_X_pc_pc,grad_X_pc_cc,grad_X_cc_pc,grad_X_cc_cc, grad_DX_X = gradients.grad_DX_X_ICEC_batch(pm, cm)  # (batch, 6, 6)
-                grad_M_pc_pc, grad_M_pc_cc, grad_M_cc_pc, grad_M_cc_cc, grad_DX_M = gradients.grad_DX_M_ICEC_batch(pm, cm, pv, cv)
+            p_slice = slice(3 * (selected_parent_index * grad_per_ICEC.num_vertices + i),
+                            3 * (selected_parent_index * grad_per_ICEC.num_vertices + i) + 3)
+            p_mcol = selected_parent_index * grad_per_ICEC.num_vertices + i
+            c_slice = slice(3 * (child_idx * grad_per_ICEC.num_vertices + 0),
+                            3 * (child_idx * grad_per_ICEC.num_vertices + 0) + 3)
+            c_mcol = child_idx * grad_per_ICEC.num_vertices + 0
 
-                p_slice = slice(3 * (selected_parent_index * grad_per_ICEC.num_vertices + i),
-                                3 * (selected_parent_index * grad_per_ICEC.num_vertices + i) + 3)
-                p_mcol = selected_parent_index * grad_per_ICEC.num_vertices + i
-                c_slice = slice(3 * (child_idx * grad_per_ICEC.num_vertices + i),
-                                3 * (child_idx * grad_per_ICEC.num_vertices + i) + 3)
-                c_mcol = child_idx * grad_per_ICEC.num_vertices + i
-
-                grad_per_ICEC.grad_DX_X[:, p_slice, p_slice] = grad_X_pc_pc
-                grad_per_ICEC.grad_DX_X[:, p_slice, c_slice] = grad_X_pc_cc
-                grad_per_ICEC.grad_DX_X[:, c_slice, p_slice] = grad_X_cc_pc
-                grad_per_ICEC.grad_DX_X[:, c_slice, c_slice] = grad_X_cc_cc
+            grad_per_ICEC.grad_DX_X[:, p_slice, p_slice] = grad_X_pc_pc
+            grad_per_ICEC.grad_DX_X[:, p_slice, c_slice] = grad_X_pc_cc
+            grad_per_ICEC.grad_DX_X[:, c_slice, p_slice] = grad_X_cc_pc
+            grad_per_ICEC.grad_DX_X[:, c_slice, c_slice] = grad_X_cc_cc
 
 
-                grad_per_ICEC.grad_DX_M[:, p_slice, p_mcol:p_mcol + 1] = grad_M_pc_pc
-                grad_per_ICEC.grad_DX_M[:, p_slice, c_mcol:c_mcol + 1] = grad_M_pc_cc
-                grad_per_ICEC.grad_DX_M[:, c_slice, p_mcol:p_mcol + 1] = grad_M_cc_pc
-                grad_per_ICEC.grad_DX_M[:, c_slice, c_mcol:c_mcol + 1] = grad_M_cc_cc
+            grad_per_ICEC.grad_DX_M[:, p_slice, p_mcol:p_mcol + 1] = grad_M_pc_pc
+            grad_per_ICEC.grad_DX_M[:, p_slice, c_mcol:c_mcol + 1] = grad_M_pc_cc
+            grad_per_ICEC.grad_DX_M[:, c_slice, p_mcol:p_mcol + 1] = grad_M_cc_pc
+            grad_per_ICEC.grad_DX_M[:, c_slice, c_mcol:c_mcol + 1] = grad_M_cc_cc
 
         # Vector from parent to child's first vertex
         updated_edges = child_vertices[:, 0] - parent_vertices[:, coupling_index].view(-1, 3)
