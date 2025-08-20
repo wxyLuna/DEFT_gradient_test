@@ -220,7 +220,7 @@ class Unit_test_sim(nn.Module):
 
 
         eps_mass = 0*1e-6
-        eps_position = 1*1e-5
+        eps_position = 1*1e-6
         zero_vertices_mask = (self.undeformed_vert != 0).to(torch.uint8)
         self.d_positions = eps_position*zero_vertices_mask
         self.d_positions[0] *= 0.5 # make d_mass matrix of parent and children different
@@ -406,23 +406,6 @@ class Unit_test_sim(nn.Module):
                 children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
                 children_vertices = children_vertices.view(-1, self.n_vert, 3)
                 children_vertices_input = children_vertices.clone()
-                #coupling constraints
-                # positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
-                #     self.batch,
-                #     self.n_branch,
-                #     parent_vertices,
-                #     children_vertices,
-                #     self.rigid_body_coupling_index,
-                #     self.coupling_mass_scale,
-                #     self.mass_matrix[self.selected_parent_index],
-                #     self.mass_matrix[self.selected_children_index],
-                #     self.selected_parent_index,
-                #     self.selected_children_index,
-                #     self.bkgrad
-                # )
-                # #
-                # self.bkgrad.grad_DX_X = grad_per_Coupling_itr.grad_DX_X
-                # self.bkgrad.grad_DX_M = grad_per_Coupling_itr.grad_DX_M
                 b_DLO_vert_input = positions.clone()
 
                 #Inextensibility constraint
@@ -442,93 +425,46 @@ class Unit_test_sim(nn.Module):
                 self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                 self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
-                positions_pos_coup, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
-                    self.batch,
-                    self.n_branch,
-                    parent_vertices+self.d_positions[self.selected_parent_index],
-                    children_vertices+self.d_positions[self.selected_children_index],
-                    self.rigid_body_coupling_index,
-                    self.d_coupling_mass_scale_pos,
-                    self.mass_matrix[self.selected_parent_index],
-                    self.mass_matrix[self.selected_children_index],
-                    self.selected_parent_index,
-                    self.selected_children_index,
-                    self.bkgrad
-                )
-                positions_neg_coup, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
-                    self.batch,
-                    self.n_branch,
-                    parent_vertices - self.d_positions[self.selected_parent_index],
-                    children_vertices - self.d_positions[self.selected_children_index],
-                    self.rigid_body_coupling_index,
-                    self.d_coupling_mass_scale_neg,
-                    self.mass_matrix[self.selected_parent_index],
-                    self.mass_matrix[self.selected_children_index],
-                    self.selected_parent_index,
-                    self.selected_children_index,
-                    self.bkgrad
-                )
 
+            d_positions = self.d_positions.reshape(self.batch,self.n_branch,self.n_vert,3)
+            d_positions = d_positions.reshape(self.batch,self.n_branch*self.n_vert*3,1)
 
-                d_positions = self.d_positions.reshape(self.batch,self.n_branch,self.n_vert,3)
-                d_positions = d_positions.reshape(self.batch,self.n_branch*self.n_vert*3,1)
+            d_positions_np = d_positions.detach().numpy()
 
-                d_positions_np = d_positions.detach().numpy()
-
-                d_mass_diag_vals_np = self.d_mass_diag_vals.detach().numpy()
-                analytical_d_delta_positions = np.matmul(self.bkgrad.grad_DX_X, d_positions_np) + np.matmul(self.bkgrad.grad_DX_M, d_mass_diag_vals_np.reshape(self.batch,self.n_branch*self.n_vert,1))
-                analytical_d_delta_positions= analytical_d_delta_positions.reshape(self.batch*self.n_branch,self.n_vert,3)
-                # print('analytical_d_delta_positions',analytical_d_delta_positions)
-            # delta_posisiton_pos = positions_pos - (b_DLO_vert_input + self.d_positions)
-            # delta_posisiton_neg = positions_neg - (b_DLO_vert_input - self.d_positions)
-            # numerical_d_delta_positions_coupling = (delta_posisiton_pos - delta_posisiton_neg) / 2
+            d_mass_diag_vals_np = self.d_mass_diag_vals.detach().numpy().reshape(self.batch,self.n_branch*self.n_vert,1)
+            analytical_d_delta_positions = np.matmul(self.bkgrad.grad_DX_X, d_positions_np) + np.matmul(self.bkgrad.grad_DX_M, d_mass_diag_vals_np)
+            # analytical_d_delta_positions = (grad_DX_X_ICE - I) @ (grad_DX_X_Coup @ d_positions + grad_DX_M_Coup @ d_mass_diag_vals_np) + grad_DX_M_ICE @ d_mass_diag_vals_np
+            analytical_d_delta_positions= analytical_d_delta_positions.reshape(self.batch*self.n_branch,self.n_vert,3)
+            # print('analytical_d_delta_positions',analytical_d_delta_positions)
 
             #_____Numerical_______
-                d_positions_np_pos = self.d_positions
-                d_positions_np_neg = -self.d_positions
+            d_positions_np_pos = self.d_positions
+            d_positions_np_neg = -self.d_positions
+            b_DLO_vert_pre_constraint = b_DLO_vert_input.clone()
+            d_positions_pos = self.d_positions
+            d_positions_neg = -self.d_positions
+            positions_pos = self.constraint_loop_iteration(constraint_loop,self.batch,b_DLO_vert_input,
+                                                           self.batched_m_restEdgeL,self.mass_matrix,self.inext_scale,self.clamped_index,
+                                                           self.d_mass_scale_pos_inext,self.zero_mask_num,self.b_undeformed_vert,
+                                                           self.bkgrad,self.n_branch,d_positions_pos,self.d_coupling_mass_scale_pos)
+            positions_neg = self.constraint_loop_iteration(constraint_loop, self.batch,
+                                                           b_DLO_vert_input,
+                                                           self.batched_m_restEdgeL, self.mass_matrix, self.inext_scale,
+                                                           self.clamped_index,
+                                                           self.d_mass_scale_pos_inext, self.zero_mask_num,
+                                                           self.b_undeformed_vert,
+                                                           self.bkgrad, self.n_branch, d_positions_neg,
+                                                           self.d_coupling_mass_scale_neg)
+            delta_posisiton_pos = positions_pos - (b_DLO_vert_pre_constraint + self.d_positions)
+            #
+            delta_posisiton_neg = positions_neg - (b_DLO_vert_pre_constraint - self.d_positions)
 
-            # positions_pos = self.constraint_loop_iteration(constraint_loop, self.batch, b_DLO_vert_input, self.batched_m_restEdgeL, self.mass_matrix, self.inext_scale, self.clamped_index,
-            #                 self.d_mass_scale_pos_inext, self.zero_mask_num, self.b_undeformed_vert, self.bkgrad, self.n_branch,d_positions_np_pos,self.d_coupling_mass_scale_pos)
-            # positions_neg = self.constraint_loop_iteration(constraint_loop, self.batch, b_DLO_vert_input, self.batched_m_restEdgeL,self.mass_matrix, self.inext_scale, self.clamped_index,
-            #                                                self.d_mass_scale_neg_inext, self.zero_mask_num, self.b_undeformed_vert,self.bkgrad, self.n_branch, d_positions_np_neg,self.d_coupling_mass_scale_neg)
-                b_DLO_vert_pre_constraint = b_DLO_vert_input.clone()
-                positions_pos_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-                    self.batch,
-                    b_DLO_vert_input+self.d_positions,
-                    self.batched_m_restEdgeL,  ## change to nominal length
-                    self.mass_matrix,
-                    self.clamped_index,
-                    self.inext_scale,
-                    self.d_mass_scale_pos_inext,
-                    self.zero_mask_num,
-                    self.b_undeformed_vert,
-                    self.bkgrad,
-                    self.n_branch
-                )
-                positions_neg_ICE, _ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-                    self.batch,
-                    b_DLO_vert_input-self.d_positions,
-                    self.batched_m_restEdgeL,  ## change to nominal length
-                    self.mass_matrix,
-                    self.clamped_index,
-                    self.inext_scale,
-                    self.d_mass_scale_neg_inext,
-                    self.zero_mask_num,
-                    self.b_undeformed_vert,
-                    self.bkgrad,
-                    self.n_branch
-                )
-                # delta_posisiton_pos = positions_pos - (b_DLO_vert_pre_constraint + self.d_positions)
-                #
-                # delta_posisiton_neg = positions_neg - (b_DLO_vert_pre_constraint - self.d_positions)
-                delta_posisiton_pos = positions_pos_ICE-positions_pos_coup
-                delta_posisiton_neg = positions_neg_ICE-positions_neg_coup
-                d_delta_positions_ICE = (delta_posisiton_pos - delta_posisiton_neg) / 2
+            d_delta_positions_ICE = (delta_posisiton_pos - delta_posisiton_neg) / 2
 
-                numerical_d_delta_positions_coupling = d_delta_positions_ICE.detach().cpu().numpy()
+            numerical_d_delta_positions = d_delta_positions_ICE.detach().cpu().numpy()
 
-                # print('numerical_d_delta_positions_coupling',numerical_d_delta_positions_coupling)
-                print('analytical vs numerical ratio',numerical_d_delta_positions_coupling/analytical_d_delta_positions)
+            # print('numerical_d_delta_positions_coupling',numerical_d_delta_positions_coupling)
+            print('analytical vs numerical ratio',numerical_d_delta_positions/analytical_d_delta_positions)
 
             # ___Continue with the simulation using the enforced positions___
             velocities = (positions_ICE - prev_positions) / dt

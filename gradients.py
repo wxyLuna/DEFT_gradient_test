@@ -16,9 +16,9 @@ class BackwardGradientIC:
         return
 
     def reset(self, batch,num_branch, num_vertices):
-        self.grad_DX_X = np.zeros((batch, num_branch*num_vertices*3, num_branch*num_vertices*3), dtype=np.float32) ## change dimension
+        self.grad_DX_X = np.zeros((batch, num_branch*3, num_branch*num_vertices*3), dtype=np.float32) ## change dimension
         # self.grad_DX_Xinit = np.zeros((batch, num_branch*num_vertices*3, num_branch*num_vertices*3), dtype=np.float32)
-        self.grad_DX_M = np.zeros((batch, num_branch*num_vertices*3, num_branch*num_vertices), dtype=np.float32)## change dimension
+        self.grad_DX_M = np.zeros((batch, num_branch*3, num_branch*num_vertices), dtype=np.float32)## change dimension
         return
 
 class BackwardGradientDamping:

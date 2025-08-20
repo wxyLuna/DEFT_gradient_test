@@ -332,9 +332,6 @@ class constraints_enforcement(nn.Module):
                     .repeat(1, 2, 1)
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
-            # print(f'at edge {i} delta_x',delta_x)
-            dx0 = delta_x[:, 0, :].unsqueeze(-1)
-            dx1 = delta_x[:, 1, :].unsqueeze(-1)  # (B,3,1)
 
 
 
@@ -348,6 +345,7 @@ class constraints_enforcement(nn.Module):
 
             DX_0 /= DX_0_scale.view(-1, 1, 1)# this is incorrect division, please fix
             DX_1 /= DX_1_scale.view(-1, 1, 1)# this is incorrect division, please fix
+
 
             # grad_DX_X_step=np.zeros((n_branch * batch, 6, 6))
 
