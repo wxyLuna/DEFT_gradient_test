@@ -332,29 +332,34 @@ class constraints_enforcement(nn.Module):
                     .repeat(1, 2, 1)
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
+            # print(f'at edge {i} delta_x',delta_x)
+            dx0 = delta_x[:, 0, :].unsqueeze(-1)
+            dx1 = delta_x[:, 1, :].unsqueeze(-1)  # (B,3,1)
 
 
 
-            # DX_0, DX_1 = func_DX_ICitr_batch(
-            #     DLO_mass[:, i], DLO_mass[:, i + 1],
-            #     current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-            #     undeformed_vertices[:, i], undeformed_vertices[:, i + 1],mask
-            # )
-            #
-            # DX_0 /= scale[:, i]# this is incorrect division, please fix
-            # DX_1 /= scale[:, i]# this is incorrect division, please fix
+            DX_0, DX_1 = func_DX_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
+                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],mask
+            )
+            DX_0_scale = scale[:, i][0::2]
+            DX_1_scale = scale[:, i][1::2]
 
-            # print('multiple within IC', DX_0 / np.expand_dims(delta_x.detach().numpy()[:, 0, :], axis=-1),DX_1 /np.expand_dims(delta_x.detach().numpy()[:, 1, :], axis=-1))
+            DX_0 /= DX_0_scale.view(-1, 1, 1)# this is incorrect division, please fix
+            DX_1 /= DX_1_scale.view(-1, 1, 1)# this is incorrect division, please fix
+
             # grad_DX_X_step=np.zeros((n_branch * batch, 6, 6))
 
             # ___Update the gradient for the current vertices___
             grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
-                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
+                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask,DX_0_scale,DX_1_scale
             )
-
-            grad_DX_X_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1, 6).view(n_branch,6,6)) ## this may need to be checked
+            grad_DX_X_step[:, 0:3, 0:3] /= DX_0_scale.view(-1, 1, 1).repeat(1,3,3)
+            grad_DX_X_step[:, 3:6, 3:6] /= DX_1_scale.view(-1, 1, 1).repeat(1,3,3)
+            # grad_DX_X_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1, 6).view(n_branch,6,6)) ## this may need to be checked
 
             # grad_DX_X_step = np.divide(grad_DX_X_step, scale_np,out=np.zeros_like(grad_DX_X_step),where=mask)
             grad_interest_DX_X = np.zeros((grad_per_ICitr.grad_DX_X.shape[0] * grad_per_ICitr.num_branch, 6, 3 * grad_per_ICitr.num_vertices))
@@ -386,10 +391,12 @@ class constraints_enforcement(nn.Module):
             grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
-                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None],mask
+                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None],mask,
+                DX_0_scale, DX_1_scale
             )
-
-            grad_DX_M_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1,2).view(n_branch,6,2))
+            grad_DX_M_step[:, 0:3, 0:1] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 1)
+            grad_DX_M_step[:, 3:6, 1:2] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 1)
+            # grad_DX_M_step /= np.array(scale[:, i].repeat_interleave(n_branch).unsqueeze(1).repeat(1,2).view(n_branch,6,2))
 
             grad_interest_DX_M = np.zeros((grad_per_ICitr.grad_DX_M.shape[0] * grad_per_ICitr.num_branch, 6, grad_per_ICitr.num_vertices))
             # grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:, 3 * i: 3 * (i + 2), :].copy()

@@ -59,7 +59,7 @@ class BackwardGradientCoupling:
 # Gradient Solver
 #Inextensibility Constraint Enforcement
 
-def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
+def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask,scale1,scale2):
     """
     Robust batch gradient for inextensibility wrt positions.
     Inputs:
@@ -77,6 +77,7 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
     M_0, M_1 = to_np(M_0), to_np(M_1)
     X_0, X_1 = to_np(X_0), to_np(X_1)
     X_0_init, X_1_init = to_np(X_0_init), to_np(X_1_init)
+    scale1, scale2 = to_np(scale1), to_np(scale2)
     B = M_0.shape[0]
 
     # ---- normalize mask to (B,1,1) ----
@@ -129,6 +130,9 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
     # Blocks (b,3,3), matching your formulas
     # Note: M_param already acts like your previous M_param;
     # scaled_value == scale; lambda_param == lam.
+
+    scale1 = np.tile(scale1.reshape(-1, 1, 1), (1, 3, 3))
+    scale2= np.tile(scale2.reshape(-1, 1, 1), (1, 3, 3))
 
     term_M1  = M1v @ M_param                       # (b,3,3)
     term_M0  = M0v @ M_param                       # (b,3,3)
@@ -214,13 +218,14 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     return grad_DX_X_init
 
 
-def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
+def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask, scale1,scale2):
     # to numpy (no-ops if already np)
     def to_np(x): return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
 
     M_0, M_1 = to_np(M_0), to_np(M_1)                 # (B,3,3)
     X_0, X_1 = to_np(X_0), to_np(X_1)                 # (B,3,1)
     X_0_init, X_1_init = to_np(X_0_init), to_np(X_1_init)
+    scale1, scale2 = to_np(scale1), to_np(scale2)
     mask = to_np(mask).astype(bool).reshape(-1)       # (B,)
 
     B = M_0.shape[0]
@@ -266,6 +271,8 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
     MM = Mparam @ Mparam
 
     I = np.broadcast_to(np.eye(3), Mparam.shape)            # (b,3,3)
+    scale1 = scale1.reshape(-1, 1, 1)
+    scale2 = scale2.reshape(-1, 1, 1)
 
     # grads (each (b,3,1)) — your earlier formulas
     g00 = -np.einsum('bij,bjk,bkl->bil', M1v, MM, Edge) * lam
