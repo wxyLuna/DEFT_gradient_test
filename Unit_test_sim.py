@@ -220,11 +220,15 @@ class Unit_test_sim(nn.Module):
 
 
         eps_mass = 0*1e-6
-        eps_position = 1*1e-5
+        eps_position = 0*1e-8
         zero_vertices_mask = (self.undeformed_vert != 0).to(torch.uint8)
         self.d_positions = eps_position*zero_vertices_mask
         self.d_positions[0] *= 0.5 # make d_mass matrix of parent and children different
-        self.d_positions[:,2:3,:] *= 3
+        self.d_positions[:,2:3,0] = 3*1e-8
+        self.d_positions[:, 2:3, 1] = 2 * 1e-8
+        self.d_positions[:, 2:3, 2] = 1 * 1e-8
+        # self.d_positions[:, 1:3, :] *= 1.5
+        # self.d_positions[0, 7:8, :] *= 1.5
         self.d_mass_diag_vals = torch.full((3, 13, 1), eps_mass, device=self.mass_matrix.device, dtype=self.mass_matrix.dtype)
         d_mass = torch.diag_embed(self.d_mass_diag_vals*zero_vertices_mask)  # (3, 13, 3, 3)
         self.d_mass = d_mass # for inextensibility constraint enforcement
@@ -354,7 +358,7 @@ class Unit_test_sim(nn.Module):
         traj_loss_eval = 0.0
         total_loss = 0.0
         total_force = self.External_Force(self.mass_matrix)
-        constraint_loop = 2
+        constraint_loop = 1
 
 
 
@@ -362,7 +366,6 @@ class Unit_test_sim(nn.Module):
             self.bkgrad.reset(self.batch, self.n_branch, self.n_vert)
             self.bkgrad_damping.reset(self.batch, self.n_branch, self.n_vert)
             self.bkgrad_IR.reset(self.batch, self.n_vert)
-
             if t == 0:
                 # print('at time step', t)
                 positions = positions_traj[:,t].reshape(-1, self.n_vert, 3)
@@ -396,7 +399,7 @@ class Unit_test_sim(nn.Module):
 
             # ___Analytical gradient & Center values for inextensibility constraint enforcement___
 
-            for _ in range(constraint_loop):
+            for loop_idx, _ in enumerate(range(constraint_loop)):
 
                 parent_vertices = positions[self.selected_parent_index]
                 parent_vertices_input = parent_vertices.clone()
@@ -424,7 +427,6 @@ class Unit_test_sim(nn.Module):
 
             self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
             self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
-
 
             d_positions = self.d_positions.reshape(self.batch,self.n_branch,self.n_vert,3)
             d_positions = d_positions.reshape(self.batch,self.n_branch*self.n_vert*3,1)
