@@ -366,6 +366,7 @@ class constraints_enforcement(nn.Module):
                     branch_start = idx_branch * 3 * grad_per_ICitr.num_vertices
                     branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
                     grad_interest_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] = grad_per_ICitr.grad_DX_X[idx_batch, branch_start + 3*i : branch_start + 3 * (i + 2), branch_start:branch_end].copy()
+                    np.set_printoptions(threshold=np.inf, linewidth=10000, suppress=True)
             # grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2), :].copy()
 
 
@@ -375,7 +376,7 @@ class constraints_enforcement(nn.Module):
                 grad_DX_X_step,
                 np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
             ), axis=2)
-            # print('grad_step_DX_X',grad_step_DX_X)
+
 
             for idx_batch in range(grad_per_ICitr.batch):
                 for idx_branch in range(grad_per_ICitr.num_branch):
