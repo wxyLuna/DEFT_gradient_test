@@ -382,6 +382,7 @@ class constraints_enforcement(nn.Module):
                     branch_start = idx_branch * 3 * grad_per_ICitr.num_vertices
                     branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
                     grad_per_ICitr.grad_DX_X[idx_batch, branch_start + 3*i : branch_start + 3 * (i + 2), branch_start:branch_end] = (grad_interest_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] + grad_step_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] + grad_chain_passed_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :]).copy()
+
             # grad_per_ICitr.grad_DX_X[:, 3 * i: 3 * (i + 2),:] = (grad_interest_DX_X + grad_step_DX_X + grad_chain_passed_DX_X)
 
             # grad_DX_M_step = np.zeros((n_branch * batch, 6, 6))
