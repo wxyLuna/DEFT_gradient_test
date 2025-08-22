@@ -341,16 +341,18 @@ class constraints_enforcement(nn.Module):
 
             DX_0, DX_1 = func_DX_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
-                current_vertices_copy[:, i], current_vertices_copy[:, i + 1],
-                undeformed_vertices[:, i], undeformed_vertices[:, i + 1],mask
+                current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
+                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None],mask
             )
             DX_0_scale = scale[:, i][0::2]
             DX_1_scale = scale[:, i][1::2]
 
-            DX_0 /= DX_0_scale.view(-1, 1, 1)# this is incorrect division, please fix
-            DX_1 /= DX_1_scale.view(-1, 1, 1)# this is incorrect division, please fix
+            DX_0 /= DX_0_scale.view(-1, 1, 1)
+            DX_1 /= DX_1_scale.view(-1, 1, 1)
+            # print('DX0 ratio',DX_0/dx_0)
+            # print('DX1 ratio', DX_1 / dx_1)
 
-            # grad_DX_X_step=np.zeros((n_branch * batch, 6, 6))
+        # grad_DX_X_step=np.zeros((n_branch * batch, 6, 6))
 
             # ___Update the gradient for the current vertices___
             grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(

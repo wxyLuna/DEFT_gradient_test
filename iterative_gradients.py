@@ -1,69 +1,83 @@
 import numpy as np
 import torch
 
-def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init,mask):
+import numpy as np
+
+import numpy as np
+
+def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask, eps=1e-12, reg=1e-9):
     """
-    Batch version of Inextensibility Constraint Iterative Function
+    Batch version of Inextensibility Constraint Iterative Function (robust & masked)
 
-    # Inputs:
-    - M_0: [batch_size, 3, 3] mass matrix of vertex i
-    - M_1: [batch_size, 3, 3] mass matrix of vertex i+1
-    - X_0: [batch_size, 3, 1] position of vertex i
-    - X_1: [batch_size, 3, 1] position of vertex i+1
-    - X_0_init: [batch_size, 3, 1] undeformed position of vertex i
-    - X_1_init: [batch_size, 3, 1] undeformed position of vertex i+1
+    Inputs:
+    - M_0:       (B,3,3) mass matrix of vertex i
+    - M_1:       (B,3,3) mass matrix of vertex i+1
+    - X_0:       (B,3,1) position of vertex i
+    - X_1:       (B,3,1) position of vertex i+1
+    - X_0_init:  (B,3,1) undeformed position of vertex i
+    - X_1_init:  (B,3,1) undeformed position of vertex i+1
+    - mask:      (B,), (B,1), or (B,1,1) boolean mask indicating active edges
+    - eps:       Small epsilon for numerical stability
+    - reg:       Regularization for singular matrices
 
-    # Outputs:
-    - DX_0: [batch_size, 3, 1] position change of vertex i
-    - DX_1: [batch_size, 3, 1] position change of vertex i+1
+    Outputs:
+    - DX_0:      (B,3,1) position change of vertex i
+    - DX_1:      (B,3,1) position change of vertex i+1
     """
-    batch_size = M_0.shape[0]
-    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
-    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
-    X_0_init, X_1_init = X_0_init.detach().cpu().numpy(), X_1_init.detach().cpu().numpy()
+    def to_np(x): return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x, dtype=np.float64)
 
+    M_0, M_1 = to_np(M_0), to_np(M_1)
+    X_0, X_1 = to_np(X_0), to_np(X_1)
+    X_0_init, X_1_init = to_np(X_0_init), to_np(X_1_init)
+    mask = to_np(mask).astype(bool)
 
+    B = M_0.shape[0]
+    if mask.ndim == 1:
+        mask = mask[:, None, None]
+    elif mask.ndim == 2:
+        mask = mask[:, :, None]
 
+    # Detect inactive batches
+    m0_zero = (np.abs(M_0).sum(axis=(1,2), keepdims=True) == 0)
+    m1_zero = (np.abs(M_1).sum(axis=(1,2), keepdims=True) == 0)
+    x1_zero = (np.abs(X_1).sum(axis=(1,2), keepdims=True) == 0)
+    x1i_zero= (np.abs(X_1_init).sum(axis=(1,2), keepdims=True) == 0)
 
-    # Compute M_param for each batch
-    M_param = np.zeros((batch_size, 3, 3))
+    bothM_zero = m0_zero & m1_zero
+    tail_zero  = m1_zero & x1_zero & x1i_zero
+    active     = (~bothM_zero) & (~tail_zero) & mask   # shape (B,1,1)
 
-    for i in range(batch_size):
-        # Skip if any row in M_0[i] or M_1[i] is all zeros
-        if np.any(np.all(M_0[i] == 0, axis=1)) or np.any(np.all(M_1[i] == 0, axis=1)):
-            continue
-        sum_M = M_0[i] + M_1[i]
-        if np.linalg.det(sum_M) == 0:
-            continue
-        M_param[i] = np.linalg.inv(sum_M)
+    # Compute M_param (with regularization)
+    sumM = M_0 + M_1
+    regI = np.eye(3)[None, :, :] * reg
+    M_param = np.linalg.inv(sumM + regI)  # shape (B,3,3)
 
-    # Compute Edge and Edge_init for each batch
-    Edge = np.zeros((X_1 - X_0).shape)
-    Edge[mask] = X_1[mask] - X_0[mask]  # [batch_size, 3, 1]
-    Edge = np.expand_dims(Edge,axis=-1)
-    # note rounding error in IC
+    # Compute Edge and Edge_init
+    Edge = X_1 - X_0           # (B,3,1)
+    Edge_init = X_1_init - X_0_init  # (B,3,1)
 
+    # Edge lengths
+    L2 = np.sum(Edge**2, axis=1, keepdims=True)         # (B,1,1)
+    L0_2 = np.sum(Edge_init**2, axis=1, keepdims=True)  # (B,1,1)
+    denom = L2 + L0_2
+    denom = np.where(denom < eps, eps, denom)           # prevent division by zero
 
+    # Lambda
+    lambda_param = (L2 - L0_2) / denom                  # (B,1,1)
+    # lambda_param[~active] = 0.0                         # zero inactive edges
 
-    Edge_init = np.zeros((X_1_init - X_0_init).shape)
-    Edge_init[mask] = X_1_init[mask] - X_0_init[mask]  # [batch_size, 3, 1]
-    Edge_init=np.expand_dims(Edge_init,axis=-1)
+    # DX computation (same einsum style)
+    DX_0 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, Edge) * lambda_param  # (B,3,1)
+    DX_1 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param, Edge) * lambda_param  # (B,3,1)
 
-    # Compute Edge lengths for each batch
-    Edge_length = np.linalg.norm(Edge, axis=1, keepdims=True)  # [batch_size, 1, 1]
-    Edge_length_init = np.linalg.norm(Edge_init, axis=1, keepdims=True)  # [batch_size, 1, 1]
-
-
-    # Compute lambda_param for each batch
-    lambda_param = (Edge_length**2 - Edge_length_init**2) / (Edge_length**2 + Edge_length_init**2)
-
-    # Compute DX_0 and DX_1 for each batch
-    DX_0 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, Edge) * lambda_param  # [batch_size, 3, 1]
-    # DX_0 = np.matmul(M_1, np.matmul(M_param, Edge)) * lambda_param
-
-    DX_1 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param, Edge) * lambda_param  # [batch_size, 3, 1]
+    # Ensure inactive edges return zero
+    inactive_idx = np.where(~active.reshape(B))[0]
+    DX_0[inactive_idx] = 0.0
+    DX_1[inactive_idx] = 0.0
 
     return DX_0, DX_1
+
+
 
 def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
     """

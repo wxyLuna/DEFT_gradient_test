@@ -106,7 +106,7 @@ damping = nn.Parameter(torch.tensor((2.5, 2.5, 2.5), device=device))
 ##for rest_vert randomization
 rdm_scale = 0.03 # Scale for randomizing rest vertices
 mass_low, mass_high = 0.8, 1.2 # Mass range for randomization
-plotting = False # if True, saves trajectory frames
+plotting = True# if True, saves trajectory frames
 randomize_rest = False  # if True, jitter rest-vertices & mass
 
 # === Define Dataset class with previous_positions_traj generation ===

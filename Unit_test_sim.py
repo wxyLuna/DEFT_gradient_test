@@ -127,6 +127,7 @@ class Unit_test_sim(nn.Module):
         # for storing old gradients from ICE coupling constraints
         self.bkgrad_coupling = self.bkgrad
 
+        self.gravity_generation = torch.tensor
 
         self.gravity = nn.Parameter(torch.tensor((0, 0, -9.81), device=device))
         self.dt = 1e-2
@@ -224,7 +225,9 @@ class Unit_test_sim(nn.Module):
 
 
 
-    def External_Force(self, mass_matrix):
+    def External_Force(self, mass_matrix, generate_data=False):
+        if generate_data:
+            gravity = self.gravity_
         return torch.matmul(mass_matrix, self.gravity.view(-1, 1)).squeeze(-1)
 
     def Numerical_Integration(self,mass_matrix,total_force, velocities,positions, damping, integration_ratio, dt):
@@ -335,7 +338,7 @@ class Unit_test_sim(nn.Module):
             self.bkgrad.reset(self.batch, self.n_branch, self.n_vert)
             self.bkgrad_damping.reset(self.batch, self.n_branch, self.n_vert)
             self.bkgrad_IR.reset(self.batch, self.n_vert)
-            d_positions_input, d_mass_diag_vals, d_coupling_mass_scale_pos, d_coupling_mass_scale_neg, d_mass_scale_pos_inext, d_mass_scale_neg_inext = self.set_perturbation(self.b_undeformed_vert, self.n_edge, self.mass_matrix, self.selected_parent_index,self.selected_children_index,self.rigid_body_coupling_index,self.parent_mass,self.children_mass,2*1e-1,0*1e-8)
+            d_positions_input, d_mass_diag_vals, d_mass, d_coupling_mass_scale_pos, d_coupling_mass_scale_neg, d_mass_scale_pos_inext, d_mass_scale_neg_inext = self.set_perturbation(self.b_undeformed_vert, self.n_edge, self.mass_matrix, self.selected_parent_index,self.selected_children_index,self.rigid_body_coupling_index,self.parent_mass,self.children_mass,2*1e-6,0*1e-8)
             if t == 0:
                 # print('at time step', t)
                 positions = positions_traj[:,t].reshape(-1, self.n_vert, 3)
@@ -423,7 +426,7 @@ class Unit_test_sim(nn.Module):
                                                            self.batch,
                                                            b_DLO_vert_input,
                                                            self.batched_m_restEdgeL,
-                                                           self.mass_matrix,
+                                                           self.mass_matrix+d_mass,
                                                            self.inext_scale,
                                                            self.clamped_index,
                                                            d_mass_scale_pos_inext,
@@ -438,7 +441,7 @@ class Unit_test_sim(nn.Module):
                                                            self.batch,
                                                            b_DLO_vert_input,
                                                            self.batched_m_restEdgeL,
-                                                           self.mass_matrix,
+                                                           self.mass_matrix-d_mass,
                                                            self.inext_scale,
                                                            self.clamped_index,
                                                            d_mass_scale_neg_inext,
@@ -457,8 +460,8 @@ class Unit_test_sim(nn.Module):
 
             numerical_d_delta_positions_coupling = d_delta_positions_ICE.detach().cpu().numpy()
 
-            print('numerical_d_delta_positions_coupling',numerical_d_delta_positions_coupling)
-            print('analytical_d_delta_positions',analytical_d_delta_positions)
+            # print('numerical_d_delta_positions_coupling',numerical_d_delta_positions_coupling)
+            # print('analytical_d_delta_positions',analytical_d_delta_positions)
             print('analytical vs numerical ratio',numerical_d_delta_positions_coupling/analytical_d_delta_positions)
 
             # ___Continue with the simulation using the enforced positions___
@@ -560,7 +563,7 @@ class Unit_test_sim(nn.Module):
         mass_scale2_neg = (mass_matrix - d_mass)[:, :-1] @ torch.linalg.pinv((mass_matrix - d_mass)[:, 1:] + (mass_matrix - d_mass)[:, :-1])
         d_mass_scale_pos_inext = torch.cat((mass_scale1_pos, -mass_scale2_pos), dim=1).view(-1, n_edge, 3, 3)
         d_mass_scale_neg_inext = torch.cat((mass_scale1_neg, -mass_scale2_neg), dim=1).view(-1, n_edge, 3, 3)
-        return d_positions, d_mass_diag_vals, d_coupling_mass_scale_pos, d_coupling_mass_scale_neg, d_mass_scale_pos_inext, d_mass_scale_neg_inext
+        return d_positions, d_mass_diag_vals, d_mass, d_coupling_mass_scale_pos, d_coupling_mass_scale_neg, d_mass_scale_pos_inext, d_mass_scale_neg_inext
 
 
     def generate_preX_trajectory(self, time_horizon, dt):
