@@ -335,7 +335,7 @@ class Unit_test_sim(nn.Module):
             self.bkgrad.reset(self.batch, self.n_branch, self.n_vert)
             self.bkgrad_damping.reset(self.batch, self.n_branch, self.n_vert)
             self.bkgrad_IR.reset(self.batch, self.n_vert)
-            d_positions_input, d_mass_diag_vals, d_coupling_mass_scale_pos, d_coupling_mass_scale_neg, d_mass_scale_pos_inext, d_mass_scale_neg_inext = self.set_perturbation(self.b_undeformed_vert, self.n_edge, self.mass_matrix, self.selected_parent_index,self.selected_children_index,self.rigid_body_coupling_index,self.parent_mass,self.children_mass,0*1e-8,1*1e-8)
+            d_positions_input, d_mass_diag_vals, d_coupling_mass_scale_pos, d_coupling_mass_scale_neg, d_mass_scale_pos_inext, d_mass_scale_neg_inext = self.set_perturbation(self.b_undeformed_vert, self.n_edge, self.mass_matrix, self.selected_parent_index,self.selected_children_index,self.rigid_body_coupling_index,self.parent_mass,self.children_mass,2*1e-1,0*1e-8)
             if t == 0:
                 # print('at time step', t)
                 positions = positions_traj[:,t].reshape(-1, self.n_vert, 3)
@@ -411,7 +411,7 @@ class Unit_test_sim(nn.Module):
             d_mass_diag_vals_np = d_mass_diag_vals.detach().numpy()
             analytical_d_delta_positions = np.matmul(self.bkgrad.grad_DX_X, d_positions_np) + np.matmul(self.bkgrad.grad_DX_M, d_mass_diag_vals_np.reshape(self.batch,self.n_branch*self.n_vert,1))
             analytical_d_delta_positions= analytical_d_delta_positions.reshape(self.batch*self.n_branch,self.n_vert,3)
-            # print('analtical_d_delta_positions', analytical_d_delta_positions)
+
 
 
             #_____Numerical_______
@@ -535,11 +535,15 @@ class Unit_test_sim(nn.Module):
         # self.d_positions[:, 1:3, :] *= 1.5
         # self.d_positions[0, 7:8, :] *= 1.5
         d_mass_diag_vals = torch.full((3, 13, 1), eps_mass, device=mass_matrix.device,dtype=mass_matrix.dtype)
+        zero_vertices_mask_shrinked = torch.any(zero_vertices_mask, dim=-1, keepdim=True).to(torch.uint8)
+        d_mass_diag_vals = d_mass_diag_vals *zero_vertices_mask_shrinked
+        d_mass_diag_vals *= np.random.uniform(-1.0, 1.0, size=d_mass_diag_vals.shape).astype(np.float32)
         d_mass = torch.diag_embed(d_mass_diag_vals * zero_vertices_mask)  # (3, 13, 3, 3)
 
 
-        d_parent_mass = d_mass[selected_parent_index][:, rigid_body_coupling_index].view(-1, 3, 3) * 0
-        d_children_mass = d_mass[selected_children_index, 0] * 0
+        d_parent_mass = d_mass[selected_parent_index][:, rigid_body_coupling_index].view(-1, 3, 3)
+
+        d_children_mass = d_mass[selected_children_index, 0]
 
         d_mass_scale1_pos = (children_mass + d_children_mass) @ torch.linalg.inv(parent_mass + d_parent_mass + children_mass + d_children_mass)
         d_mass_scale2_pos = (parent_mass + d_parent_mass) @ torch.linalg.inv(parent_mass + d_parent_mass + children_mass + d_children_mass)
