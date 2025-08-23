@@ -899,6 +899,7 @@ class DEFT_sim(nn.Module):
 
         # Main loop over timesteps
         for ith in range(time_horizon):
+            print(f"Iteration {ith + 1}/{time_horizon}")
             # 1) Retrieve current/previous BDLO states
             if ith == 0:
                 b_DLOs_vertices = b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
