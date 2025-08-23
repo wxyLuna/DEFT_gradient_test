@@ -9,6 +9,9 @@ from numpy.core.defchararray import lower
 
 torch.set_default_dtype(torch.float64)
 import torch.nn as nn
+from iterative_gradients import func_DX_ICitr_batch
+import gradients
+import numpy as np
 
 torch.set_default_dtype(torch.float64)
 
@@ -234,7 +237,7 @@ class constraints_enforcement(nn.Module):
         return rotation_matrix
 
     def Inextensibility_Constraint_Enforcement(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                               scale, mass_scale, zero_mask_num):
+                                               scale, mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch):
         """
         Enforces inextensibility constraints for a single DLO by adjusting vertex positions
         so that the edge lengths stay near their nominal values.
@@ -248,12 +251,18 @@ class constraints_enforcement(nn.Module):
             scale (torch.Tensor): Scale factors for each edge, shape (batch, n_edges).
             mass_scale (torch.Tensor): Another scaling for masses, shape (batch, n_edges).
             zero_mask_num (torch.Tensor): 0/1 or boolean mask indicating which edges are active.
+            undeformed_vertices (torch.Tensor): Reference undeformed vertex positions for computing gradients.
+            bkgrad (class): A class or function to store gradients from previous iteration.
+            n_branch(int): Number of branches.
 
         Returns:
             current_vertices (torch.Tensor): Updated vertex positions enforcing length constraints.
+
         """
         # Square of the nominal length for each edge
         nominal_length_square = nominal_length * nominal_length
+        # Initialize gradient storage
+        grad_per_ICitr = bkgrad
 
         # Loop over each edge
         for i in range(current_vertices.size()[1] - 1):
@@ -279,6 +288,10 @@ class constraints_enforcement(nn.Module):
             # l_scale -> (batch,) -> expanded for each dimension
             l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
 
+
+            #store pre_updated current_vertices for gradient computation
+            current_vertices_copy = current_vertices.clone()
+
             # Update vertices in pair: i, i+1
             #   new_position = old_position + l_scale * 'edge_vector'
             #   repeated for each vertex in the pair
@@ -288,7 +301,116 @@ class constraints_enforcement(nn.Module):
                     .view(-1, 3, 1)
             ).view(-1, 2, 3)
 
-        return current_vertices
+            #------------------------Compute gradient for backpropagation------------------------
+            # Inextensibility scale factors for DX
+            DX_0_scale = scale[:, i][0::2]
+            DX_1_scale = scale[:, i][1::2]
+
+            # this calculation is only for checking the ICE equation result vs. the ICE function's output
+            # turn on the switch if needed, default is off
+            calculate_DX = False
+            if calculate_DX:
+                #ICE function output for DX
+                delta_x = (l_scale @ updated_edges.unsqueeze(dim=1)
+                           .repeat(1, 2, 1)
+                           .view(-1, 3, 1)
+                           ).view(-1, 2, 3)
+                dx_0 = delta_x[:, 0, :].unsqueeze(-1)
+                dx_1 = delta_x[:, 1, :].unsqueeze(-1)
+                #ICE equation output for DX
+                DX_0, DX_1 = func_DX_ICitr_batch(
+                    DLO_mass[:, i], DLO_mass[:, i + 1],
+                    current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
+                    undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
+                )
+
+                DX_0 /= DX_0_scale.view(-1, 1, 1)
+                DX_1 /= DX_1_scale.view(-1, 1, 1)
+                print('DX0 ratio',DX_0/dx_0)
+                print('DX1 ratio',DX_1/dx_1)
+
+            # ___Update the gradient for the current vertices___
+            # Gradient of the inextensibility constraint w.r.t. the positions of the two vertices
+            grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
+                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
+            )
+            grad_DX_X_step[:, 0:3, :] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 6)
+            grad_DX_X_step[:, 3:6, :] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 6)
+
+            # extract the old gradient for the two vertices from gradient storage
+            grad_interest_DX_X = np.zeros((grad_per_ICitr.grad_DX_X.shape[0] * grad_per_ICitr.num_branch, 6, 3 * grad_per_ICitr.num_vertices))
+            for idx_batch in range(grad_per_ICitr.batch):
+                for idx_branch in range(grad_per_ICitr.num_branch):
+                    branch_start = idx_branch * 3 * grad_per_ICitr.num_vertices
+                    branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
+                    grad_interest_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] = (
+                        grad_per_ICitr.grad_DX_X[idx_batch, branch_start + 3 * i: branch_start + 3 * (i + 2),
+                         branch_start:branch_end].copy())
+
+            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
+            grad_step_DX_X = np.concatenate((
+                np.zeros((n_branch * batch, 6, 3 * i)),
+                grad_DX_X_step,
+                np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
+            ), axis=2)
+
+            # performed chain rule to get the updated gradient w.r.t. the positions of the two vertices
+            for idx_batch in range(grad_per_ICitr.batch):
+                for idx_branch in range(grad_per_ICitr.num_branch):
+                    branch_start = idx_branch * 3 * grad_per_ICitr.num_vertices
+                    branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
+                    grad_per_ICitr.grad_DX_X[idx_batch, branch_start + 3*i : branch_start + 3 * (i + 2), branch_start:branch_end] = (
+                            grad_interest_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
+                            grad_step_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
+                            grad_chain_passed_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :]).copy()
+
+            # ___Update the gradient for the mass scale___
+            # Gradient of the inextensibility constraint w.r.t. the mass matrices of the two vertices
+            grad_DX_M_step = gradients.grad_DX_M_ICitr_batch(
+                DLO_mass[:, i], DLO_mass[:, i + 1],
+                current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
+                undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
+
+            )
+            grad_DX_M_step[:, 0:3, :] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 2)
+            grad_DX_M_step[:, 3:6, :] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 2)
+
+            # extract the old gradient for the two vertices from gradient storage
+            grad_interest_DX_M = np.zeros((grad_per_ICitr.grad_DX_M.shape[0] * grad_per_ICitr.num_branch, 6, grad_per_ICitr.num_vertices))
+            for idx_batch in range(grad_per_ICitr.batch):
+                for idx_branch in range(grad_per_ICitr.num_branch):
+                    branch_start = idx_branch  *  3 * grad_per_ICitr.num_vertices
+                    branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
+                    grad_interest_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] = (
+                        grad_per_ICitr.grad_DX_M[idx_batch, branch_start + 3*i : branch_start + 3 * (i + 2),
+                        branch_start//3:branch_end//3].copy())
+
+            grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
+            grad_step_DX_M = np.concatenate((
+                np.zeros((n_branch * batch, 6, i)),
+                grad_DX_M_step,
+                np.zeros((n_branch * batch, 6, (current_vertices_copy.size()[1] - i - 2)))
+            ), axis=2)
+            # performed chain rule to get the updated gradient w.r.t. the mass matrices of the two vertices
+            for idx_batch in range(grad_per_ICitr.batch):
+                for idx_branch in range(grad_per_ICitr.num_branch):
+                    branch_start = idx_branch * grad_per_ICitr.num_vertices
+                    branch_end = (idx_branch + 1) * grad_per_ICitr.num_vertices
+                    grad_per_ICitr.grad_DX_M[idx_batch, 3 * branch_start + 3 * i: 3 * branch_start + 3 * (i + 2),
+                    branch_start:branch_end] = (
+                                grad_interest_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :,:] +
+                                grad_step_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
+                                grad_chain_passed_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :]).copy()
+
+
+
+
+
+
+
+        return current_vertices, grad_per_ICitr
 
     def Inextensibility_Constraint_Enforcement_Coupling(self, parent_vertices, child_vertices, coupling_index,
                                                         coupling_mass_scale, selected_parent_index,

@@ -25,6 +25,7 @@ import os
 import numpy as np
 sys.path.append(module_dir)
 from GNN_tree import BatchedGNNModel
+import gradients
 
 import time
 
@@ -421,6 +422,12 @@ class DEFT_sim(nn.Module):
             selected_children_index
         )
 
+        ## for storing the old gradients from inextensibility enforcement
+        self.bkgrad = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
+        self.bkgrad_neg = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
+        self.bkgrad_pos = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
+        self.b_undeformed_vert = b_undeformed_vert.clone().unsqueeze(0).repeat(batch, 1, 1, 1).reshape(batch * n_branch, n_vert, 3)
+
 
     def Rod_Init(self, batch, init_direction, m_restEdgeL, clamped_index, inference_1_batch):
         """
@@ -444,7 +451,7 @@ class DEFT_sim(nn.Module):
             )
             undeformed_vert = torch.from_numpy(undeformed_vert)
         else:
-            undeformed_vert = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+            undeformed_vert,_ = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 batch,
                 (self.undeformed_vert.clone()).repeat(batch, 1, 1),
                 m_restEdgeL,
@@ -452,7 +459,10 @@ class DEFT_sim(nn.Module):
                 clamped_index,
                 self.inext_scale,
                 self.mass_scale,
-                self.zero_mask_num
+                self.zero_mask_num,
+                self.b_undeformed_vert,
+                self.bkgrad,
+                self.n_branch
             )
 
         # Compute edges for the (adjusted) undeformed shape
@@ -900,6 +910,8 @@ class DEFT_sim(nn.Module):
         # Main loop over timesteps
         for ith in range(time_horizon):
             print(f"Iteration {ith + 1}/{time_horizon}")
+            # Reset gradient storage for inextensibility enforcement
+            self.bkgrad.reset(self.batch, self.n_branch, self.n_vert)
             # 1) Retrieve current/previous BDLO states
             if ith == 0:
                 b_DLOs_vertices = b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
@@ -1202,7 +1214,7 @@ class DEFT_sim(nn.Module):
                     )
 
                     # Finally, general inextensibility constraints along each branch
-                    b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                    b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                         self.batch,
                         b_DLOs_vertices,
                         self.batched_m_restEdgeL,
@@ -1210,8 +1222,13 @@ class DEFT_sim(nn.Module):
                         self.clamped_index,
                         self.inext_scale,
                         self.mass_scale,
-                        self.zero_mask_num
+                        self.zero_mask_num,
+                        self.b_undeformed_vert,
+                        self.bkgrad,
+                        self.n_branch
                     )
+                    self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+                    self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
             # 6) Update velocities based on final positions + compute losses
             b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
