@@ -570,7 +570,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual_learning", type=bool, default=False)
 
     # Training batch size
-    parser.add_argument("--train_batch", type=int, default=32)
+    parser.add_argument("--train_batch", type=int, default=1)
 
     # Whether to visualize inference results (for debugging)
     parser.add_argument("--inference_vis", type=bool, default=False)

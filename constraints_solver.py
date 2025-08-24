@@ -381,11 +381,11 @@ class constraints_enforcement(nn.Module):
             grad_interest_DX_M = np.zeros((grad_per_ICitr.grad_DX_M.shape[0] * grad_per_ICitr.num_branch, 6, grad_per_ICitr.num_vertices))
             for idx_batch in range(grad_per_ICitr.batch):
                 for idx_branch in range(grad_per_ICitr.num_branch):
-                    branch_start = idx_branch  *  3 * grad_per_ICitr.num_vertices
-                    branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
+                    branch_start = idx_branch * grad_per_ICitr.num_vertices
+                    branch_end = (idx_branch + 1) * grad_per_ICitr.num_vertices
                     grad_interest_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] = (
-                        grad_per_ICitr.grad_DX_M[idx_batch, branch_start + 3*i : branch_start + 3 * (i + 2),
-                        branch_start//3:branch_end//3].copy())
+                        grad_per_ICitr.grad_DX_M[idx_batch, 3 * branch_start + 3 * i : 3 * branch_start + 3 * (i + 2),
+                        branch_start:branch_end].copy())
 
             grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
             grad_step_DX_M = np.concatenate((
@@ -398,16 +398,10 @@ class constraints_enforcement(nn.Module):
                 for idx_branch in range(grad_per_ICitr.num_branch):
                     branch_start = idx_branch * grad_per_ICitr.num_vertices
                     branch_end = (idx_branch + 1) * grad_per_ICitr.num_vertices
-                    grad_per_ICitr.grad_DX_M[idx_batch, 3 * branch_start + 3 * i: 3 * branch_start + 3 * (i + 2),
-                    branch_start:branch_end] = (
+                    grad_per_ICitr.grad_DX_M[idx_batch, 3 * branch_start + 3 * i: 3 * branch_start + 3 * (i + 2), branch_start:branch_end] = (
                                 grad_interest_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :,:] +
                                 grad_step_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
                                 grad_chain_passed_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :]).copy()
-
-
-
-
-
 
 
         return current_vertices, grad_per_ICitr
