@@ -281,6 +281,8 @@ class DEFT_sim(nn.Module):
         # Next, we compute coupling mass scale for the branching points
         parent_mass = self.mass_matrix[selected_parent_index][:, rigid_body_coupling_index].view(-1, 3, 3)
         children_mass = self.mass_matrix[selected_children_index, 0]
+        self.parent_mass = parent_mass
+        self.children_mass = children_mass
         self.selected_children_index = selected_children_index
         mass_scale1 = children_mass @ torch.linalg.inv(parent_mass + children_mass)
         mass_scale2 = parent_mass @ torch.linalg.inv(parent_mass + children_mass)
@@ -737,7 +739,7 @@ class DEFT_sim(nn.Module):
         parent_theta_clamp,
         optimization_mask,
         inference_1_batch
-    ):
+        ):
         """
         Forward pass for computing internal + external forces for each branch,
         then returns total force and updated twist angles.
@@ -800,6 +802,126 @@ class DEFT_sim(nn.Module):
         # Combine with external forces
         External_force = self.External_Force(self.mass_matrix)
         return (External_force[:, :self.n_vert] + Internal_force) * batch_clamped_index, theta_full
+
+    def set_perturbation(self, undeformed_vert, n_edge, mass_matrix, selected_parent_index, selected_children_index,
+                         rigid_body_coupling_index, parent_mass, children_mass, eps_mass, eps_position):
+        '''
+        Set perturbations for finite difference gradient checking.
+        :param undeformed_vert:
+        :param n_edge:
+        :param mass_matrix:
+        :param selected_parent_index:
+        :param selected_children_index:
+        :param rigid_body_coupling_index:
+        :param parent_mass:
+        :param children_mass:
+        :param eps_mass:
+        :param eps_position:
+        :return:
+        d_positions: perturbations for undeformed positions
+        d_mass_diag_vals: perturbations for mass diagonal values
+        d_mass: perturbations for mass matrix
+        d_coupling_mass_scale_pos: perturbations for coupling mass scale (positive)
+        d_coupling_mass_scale_neg: perturbations for coupling mass scale (negative)
+        d_mass_scale_pos_inext: perturbations for inextensibility mass scale (positive)
+        d_mass_scale_neg_inext: perturbations for inextensibility mass scale (negative)
+        '''
+        zero_vertices_mask = (undeformed_vert != 0).to(torch.uint8)
+        d_positions = eps_position * zero_vertices_mask
+        d_positions *= np.random.uniform(-1.0, 1.0, size=d_positions.shape).astype(np.float32)
+        d_mass_diag_vals = torch.full((self.batch*self.n_branch, self.n_vert, 1), eps_mass, device=mass_matrix.device, dtype=mass_matrix.dtype)
+        zero_vertices_mask_shrinked = torch.any(zero_vertices_mask, dim=-1, keepdim=True).to(torch.uint8)
+        d_mass_diag_vals = d_mass_diag_vals * zero_vertices_mask_shrinked
+        d_mass_diag_vals *= np.random.uniform(-1.0, 1.0, size=d_mass_diag_vals.shape).astype(np.float32)
+        d_mass = torch.diag_embed(d_mass_diag_vals * zero_vertices_mask)  # (3, 13, 3, 3)
+
+        d_parent_mass = d_mass[selected_parent_index][:, rigid_body_coupling_index].view(-1, 3, 3)
+        d_children_mass = d_mass[selected_children_index, 0]
+
+        d_mass_scale1_pos = (children_mass + d_children_mass) @ torch.linalg.inv(
+            parent_mass + d_parent_mass + children_mass + d_children_mass)
+        d_mass_scale2_pos = (parent_mass + d_parent_mass) @ torch.linalg.inv(
+            parent_mass + d_parent_mass + children_mass + d_children_mass)
+        coupling_mass_scale_pos = torch.cat((d_mass_scale1_pos.unsqueeze(dim=1), -d_mass_scale2_pos.unsqueeze(dim=1)),
+                                              dim=1)
+        d_mass_scale1_neg = (children_mass - d_children_mass) @ torch.linalg.inv(
+            parent_mass - d_parent_mass + children_mass - d_children_mass)
+        d_mass_scale2_neg = (parent_mass - d_parent_mass) @ torch.linalg.inv(
+            parent_mass - d_parent_mass + children_mass - d_children_mass)
+        coupling_mass_scale_neg = torch.cat((d_mass_scale1_neg.unsqueeze(dim=1), -d_mass_scale2_neg.unsqueeze(dim=1)),
+                                              dim=1)
+
+        mass_scale1_pos = (mass_matrix + d_mass)[:, 1:] @ torch.linalg.pinv(
+            (mass_matrix + d_mass)[:, 1:] + (mass_matrix + d_mass)[:, :-1])
+        mass_scale1_neg = (mass_matrix - d_mass)[:, 1:] @ torch.linalg.pinv(
+            (mass_matrix - d_mass)[:, 1:] + (mass_matrix - d_mass)[:, :-1])
+        mass_scale2_pos = (mass_matrix + d_mass)[:, :-1] @ torch.linalg.pinv(
+            (mass_matrix + d_mass)[:, 1:] + (mass_matrix + d_mass)[:, :-1])
+        mass_scale2_neg = (mass_matrix - d_mass)[:, :-1] @ torch.linalg.pinv(
+            (mass_matrix - d_mass)[:, 1:] + (mass_matrix - d_mass)[:, :-1])
+        mass_scale_pos_inext = torch.cat((mass_scale1_pos, -mass_scale2_pos), dim=1).view(-1, n_edge, 3, 3)
+        mass_scale_neg_inext = torch.cat((mass_scale1_neg, -mass_scale2_neg), dim=1).view(-1, n_edge, 3, 3)
+        print('self.d_positions', d_positions)
+        print('self.d_mass_diag_vals', d_mass_diag_vals.squeeze())
+        return d_positions, d_mass_diag_vals, d_mass, coupling_mass_scale_pos, coupling_mass_scale_neg, mass_scale_pos_inext, mass_scale_neg_inext
+
+    def constraint_loop_iteration(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
+                                               scale, perturbed_mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch, d_positions):
+        '''Iterative simulation loop for constraint satisfaction.
+        :param batch: batch size
+        :param current_vertices: current positions of all vertices
+        :param nominal_length: rest lengths of edges
+        :param DLO_mass: mass matrix for all vertices
+        :param clamped_index: clamped vertex mask
+        :param scale: inextensibility scale
+        :param mass_scale: inextensibility mass scale
+        :param zero_mask_num: non-existent vertex mask in numpy format
+        :param undeformed_vertices: undeformed positions of all vertices
+        :param bkgrad: backward gradient calculator
+        :param n_branch: number of branches
+        d_positions: perturbation to the positions for Coupling constraints only. Depending on the input sign of the perturbation
+        perturbed_mass_scale_inext: perturbed inextensibility mass scale
+
+        '''
+
+        current_vertices += d_positions
+        for _ in range(20):
+            # parent_vertices = positions[self.selected_parent_index]
+            # children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
+            # children_vertices = children_vertices.view(-1, self.n_vert, 3)
+            # coupling constraints
+            # positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+            #     batch,
+            #     n_branch,
+            #     parent_vertices+d_positions[self.selected_parent_index],
+            #     children_vertices+d_positions[self.selected_children_index],
+            #     self.rigid_body_coupling_index,
+            #     d_coupling_mass_scale,
+            #     mass_matrix[self.selected_parent_index],
+            #     mass_matrix[self.selected_children_index],
+            #     self.selected_parent_index,
+            #     self.selected_children_index,
+            #     bkgrad
+            # )
+
+            positions_ICE, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                batch,
+                current_vertices,
+                nominal_length,
+                DLO_mass,
+                clamped_index,
+                scale,
+                perturbed_mass_scale,
+                zero_mask_num,
+                undeformed_vertices,
+                bkgrad,
+                n_branch
+            )
+
+            positions = positions_ICE
+
+
+        return positions
 
     def iterative_sim(
         self,
@@ -912,6 +1034,20 @@ class DEFT_sim(nn.Module):
             print(f"Iteration {ith + 1}/{time_horizon}")
             # Reset gradient storage for inextensibility enforcement
             self.bkgrad.reset(self.batch, self.n_branch, self.n_vert)
+            # Perturbations for finite difference gradient checking
+            (d_positions_input, d_mass_diag_vals, d_mass,
+             coupling_mass_scale_pos, coupling_mass_scale_neg,
+             mass_scale_pos_inext, mass_scale_neg_inext) = self.set_perturbation(self.b_undeformed_vert,
+                                                                                 self.n_edge,
+                                                                                 self.mass_matrix,
+                                                                                 self.selected_parent_index,
+                                                                                 self.selected_children_index,
+                                                                                 self.rigid_body_coupling_index,
+                                                                                 self.parent_mass,
+                                                                                 self.children_mass,
+                                                                                 0*1e-6,# eps_mass
+                                                                                 2*1e-8)# eps_position
+
             # 1) Retrieve current/previous BDLO states
             if ith == 0:
                 b_DLOs_vertices = b_DLOs_vertices_traj[:, ith].reshape(-1, self.n_vert, 3)
@@ -1212,6 +1348,7 @@ class DEFT_sim(nn.Module):
                         self.selected_parent_index,
                         self.selected_children_index
                     )
+                    b_DLOs_vertices_input_pos_input = b_DLOs_vertices.clone()
 
                     # Finally, general inextensibility constraints along each branch
                     b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
@@ -1229,6 +1366,51 @@ class DEFT_sim(nn.Module):
                     )
                     self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                     self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+
+            #--------------calculate analytical ICE gradient----------------
+            d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
+            d_positions_np = d_positions.detach().numpy()
+            d_mass_diag_vals_np = d_mass_diag_vals.detach().numpy()
+            analytical_d_delta_positions = np.matmul(self.bkgrad.grad_DX_X, d_positions_np) + np.matmul(self.bkgrad.grad_DX_M, d_mass_diag_vals_np.reshape(self.batch,self.n_branch*self.n_vert,1))
+            analytical_d_delta_positions = analytical_d_delta_positions.reshape(self.batch * self.n_branch, self.n_vert,3)
+
+            #--------------calculate numerical ICE gradient-----------------
+            d_positions_input_pos = d_positions_input
+            d_positions_input_neg = -d_positions_input
+            b_DLOs_vertices_neg_input = b_DLOs_vertices_input_pos_input.clone()
+            b_DLOs_vertices_pre_constraint = b_DLOs_vertices_input_pos_input.clone()
+            b_DLOs_vertices_pos = self.constraint_loop_iteration(self.batch,
+                                                                    b_DLOs_vertices_input_pos_input,
+                                                                    self.batched_m_restEdgeL,
+                                                                    self.mass_matrix + d_mass,
+                                                                    self.clamped_index,
+                                                                    self.inext_scale,
+                                                                    mass_scale_pos_inext,
+                                                                    self.zero_mask_num,
+                                                                    self.b_undeformed_vert,
+                                                                    self.bkgrad_pos,
+                                                                    self.n_branch,
+                                                                    d_positions_input_pos)
+            b_DLOs_vertices_neg = self.constraint_loop_iteration(self.batch,
+                                                                    b_DLOs_vertices_neg_input,
+                                                                    self.batched_m_restEdgeL,
+                                                                    self.mass_matrix - d_mass,
+                                                                    self.clamped_index,
+                                                                    self.inext_scale,
+                                                                    mass_scale_pos_inext,
+                                                                    self.zero_mask_num,
+                                                                    self.b_undeformed_vert,
+                                                                    self.bkgrad_neg,
+                                                                    self.n_branch,
+                                                                    d_positions_input_neg)
+
+            delta_posisiton_pos = b_DLOs_vertices_pos - (b_DLOs_vertices_pre_constraint + d_positions_input)
+            delta_posisiton_neg = b_DLOs_vertices_neg - (b_DLOs_vertices_pre_constraint - d_positions_input)
+            d_delta_positions_ICE = (delta_posisiton_pos - delta_posisiton_neg) / 2
+            numerical_d_delta_positions_coupling = d_delta_positions_ICE.detach().cpu().numpy()
+            print('analytical vs numerical ratio', numerical_d_delta_positions_coupling / analytical_d_delta_positions)
+
+
 
             # 6) Update velocities based on final positions + compute losses
             b_DLOs_velocity = (b_DLOs_vertices - prev_b_DLOs_vertices_copy) / dt
