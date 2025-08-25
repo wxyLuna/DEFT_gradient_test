@@ -338,33 +338,25 @@ class constraints_enforcement(nn.Module):
             )
             grad_DX_X_step[:, 0:3, :] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 6)
             grad_DX_X_step[:, 3:6, :] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 6)
+            grad_DX_X_step = grad_DX_X_step.reshape(n_branch, batch, 6, 6)
 
-            # extract the old gradient for the two vertices from gradient storage
-            grad_interest_DX_X = np.zeros((grad_per_ICitr.grad_DX_X.shape[0] * grad_per_ICitr.num_branch, 6, 3 * grad_per_ICitr.num_vertices))
-            for idx_batch in range(grad_per_ICitr.batch):
-                for idx_branch in range(grad_per_ICitr.num_branch):
-                    branch_start = idx_branch * 3 * grad_per_ICitr.num_vertices
-                    branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
-                    grad_interest_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] = (
-                        grad_per_ICitr.grad_DX_X[idx_batch, branch_start + 3 * i: branch_start + 3 * (i + 2),
-                         branch_start:branch_end].copy())
+            for idx_branch in range(n_branch):
+                grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 
+                                      idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * i:
+                                      idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * (i + 2),
+                                      :].copy()
+                
+                grad_chain_passed_DX_X = grad_DX_X_step[idx_branch] @ grad_interest_DX_X
 
-            grad_chain_passed_DX_X = grad_DX_X_step @ grad_interest_DX_X
-            grad_step_DX_X = np.concatenate((
-                np.zeros((n_branch * batch, 6, 3 * i)),
-                grad_DX_X_step,
-                np.zeros((n_branch * batch, 6, 3 * (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
+                grad_DX_X_step_expanded = np.concatenate((
+                    np.zeros((batch, 6, 3 * (idx_branch * grad_per_ICitr.num_vertices + i))),
+                    grad_DX_X_step[idx_branch],
+                    np.zeros((batch, 6, 3 * (3 * grad_per_ICitr.num_vertices - i - 2 - idx_branch * grad_per_ICitr.num_vertices)))
+                ), axis=2)
 
-            # performed chain rule to get the updated gradient w.r.t. the positions of the two vertices
-            for idx_batch in range(grad_per_ICitr.batch):
-                for idx_branch in range(grad_per_ICitr.num_branch):
-                    branch_start = idx_branch * 3 * grad_per_ICitr.num_vertices
-                    branch_end = (idx_branch + 1) * 3 * grad_per_ICitr.num_vertices
-                    grad_per_ICitr.grad_DX_X[idx_batch, branch_start + 3*i : branch_start + 3 * (i + 2), branch_start:branch_end] = (
-                            grad_interest_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
-                            grad_step_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
-                            grad_chain_passed_DX_X[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :]).copy()
+                grad_per_ICitr.grad_DX_X[:, idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * i:
+                                          idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * (i + 2),
+                                          :] = grad_DX_X_step_expanded + grad_interest_DX_X + grad_chain_passed_DX_X
 
             # ___Update the gradient for the mass scale___
             # Gradient of the inextensibility constraint w.r.t. the mass matrices of the two vertices
@@ -376,33 +368,25 @@ class constraints_enforcement(nn.Module):
             )
             grad_DX_M_step[:, 0:3, :] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 2)
             grad_DX_M_step[:, 3:6, :] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 2)
+            grad_DX_M_step = grad_DX_M_step.reshape(n_branch, batch, 6, 2)
 
-            # extract the old gradient for the two vertices from gradient storage
-            grad_interest_DX_M = np.zeros((grad_per_ICitr.grad_DX_M.shape[0] * grad_per_ICitr.num_branch, 6, grad_per_ICitr.num_vertices))
-            for idx_batch in range(grad_per_ICitr.batch):
-                for idx_branch in range(grad_per_ICitr.num_branch):
-                    branch_start = idx_branch * grad_per_ICitr.num_vertices
-                    branch_end = (idx_branch + 1) * grad_per_ICitr.num_vertices
-                    grad_interest_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] = (
-                        grad_per_ICitr.grad_DX_M[idx_batch, 3 * branch_start + 3 * i : 3 * branch_start + 3 * (i + 2),
-                        branch_start:branch_end].copy())
+            for idx_branch in range(n_branch):
+                grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:, 
+                                      idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * i:
+                                      idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * (i + 2),
+                                      :].copy()
 
-            grad_chain_passed_DX_M = grad_DX_X_step @ grad_interest_DX_M
-            grad_step_DX_M = np.concatenate((
-                np.zeros((n_branch * batch, 6, i)),
-                grad_DX_M_step,
-                np.zeros((n_branch * batch, 6, (current_vertices_copy.size()[1] - i - 2)))
-            ), axis=2)
-            # performed chain rule to get the updated gradient w.r.t. the mass matrices of the two vertices
-            for idx_batch in range(grad_per_ICitr.batch):
-                for idx_branch in range(grad_per_ICitr.num_branch):
-                    branch_start = idx_branch * grad_per_ICitr.num_vertices
-                    branch_end = (idx_branch + 1) * grad_per_ICitr.num_vertices
-                    grad_per_ICitr.grad_DX_M[idx_batch, 3 * branch_start + 3 * i: 3 * branch_start + 3 * (i + 2), branch_start:branch_end] = (
-                                grad_interest_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :,:] +
-                                grad_step_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :] +
-                                grad_chain_passed_DX_M[idx_batch * grad_per_ICitr.num_branch + idx_branch, :, :]).copy()
+                grad_chain_passed_DX_M = grad_DX_X_step[idx_branch] @ grad_interest_DX_M
 
+                grad_M_X_step_expanded = np.concatenate((
+                    np.zeros((batch, 6, idx_branch * grad_per_ICitr.num_vertices + i)),
+                    grad_DX_M_step[idx_branch],
+                    np.zeros((batch, 6, 3 * grad_per_ICitr.num_vertices - i - 2 - idx_branch * grad_per_ICitr.num_vertices))
+                ), axis=2)
+
+                grad_per_ICitr.grad_DX_M[:, idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * i:
+                                          idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * (i + 2),
+                                          :] = grad_M_X_step_expanded + grad_interest_DX_M + grad_chain_passed_DX_M
 
         return current_vertices, grad_per_ICitr
 
@@ -431,7 +415,6 @@ class constraints_enforcement(nn.Module):
         grad_per_ICEC = bkgrad
         # Vector from parent to child's first vertex
         updated_edges = child_vertices[:, 0] - parent_vertices[:, coupling_index].view(-1, 3)
-        print('updated_edge', updated_edges)
         parent_vertices_copy = parent_vertices.clone()
         child_vertices_copy = child_vertices.clone()
         # coupling_mass_scale => (l1, l2)
@@ -479,6 +462,7 @@ class constraints_enforcement(nn.Module):
                 print('DX parent ratio', DX_0 / dx_0)
                 print('DX child ratio', DX_1 / dx_1)
 
+            # ___Update the gradients___
             grad_X_pc_pc_step, grad_X_pc_cc_step,grad_X_cc_pc_step,grad_X_cc_cc_step, grad_DX_X_step = gradients.grad_DX_X_ICEC_batch(pm, cm)  # (batch, 6, 6)
             grad_M_pc_pc_step, grad_M_pc_cc_step, grad_M_cc_pc_step, grad_M_cc_cc_step, grad_DX_M_step = gradients.grad_DX_M_ICEC_batch(pm, cm, pv, cv)
 
@@ -489,54 +473,45 @@ class constraints_enforcement(nn.Module):
                             3 * (child_idx * grad_per_ICEC.num_vertices + 0) + 3)
             c_mcol = child_idx * grad_per_ICEC.num_vertices + 0
 
-            # extract the old gradient for the two vertices from gradient storage
-            grad_X_pc_pc_interest = grad_per_ICEC.grad_DX_X[:, p_slice, p_slice].copy()
-            grad_X_pc_cc_interest = grad_per_ICEC.grad_DX_X[:, p_slice, c_slice].copy()
-            grad_X_cc_pc_interest = grad_per_ICEC.grad_DX_X[:, c_slice, p_slice].copy()
-            grad_X_cc_cc_interest = grad_per_ICEC.grad_DX_X[:, c_slice, c_slice].copy()
-
-            grad_DX_X_interest = np.concatenate(
-                (np.concatenate((grad_X_pc_pc_interest, grad_X_pc_cc_interest), axis=2),
-                 np.concatenate((grad_X_cc_pc_interest, grad_X_cc_cc_interest), axis=2)),
-                axis=1
-            )
+            # ___Update the gradient for the current vertices___
+            grad_X_pc_interest = grad_per_ICEC.grad_DX_X[:, p_slice, :].copy()
+            grad_X_cc_interest = grad_per_ICEC.grad_DX_X[:, c_slice, :].copy()
+            grad_DX_X_interest = np.concatenate((grad_X_pc_interest, grad_X_cc_interest), axis=1)
 
             grad_chain_passed_DX_X = grad_DX_X_step @ grad_DX_X_interest
 
-            grad_step_DX_X = grad_DX_X_step + grad_DX_X_interest + grad_chain_passed_DX_X
-            grad_X_pc_pc = grad_step_DX_X[:, :3, :3]
-            grad_X_pc_cc = grad_step_DX_X[:, :3, 3:]
-            grad_X_cc_pc = grad_step_DX_X[:, 3:, :3]
-            grad_X_cc_cc = grad_step_DX_X[:, 3:, 3:]
+            grad_DX_X_step_expanded = np.concatenate((
+                np.zeros((batch, 6, 3 * i)),
+                grad_DX_X_step[:, :, 0:3],
+                np.zeros((batch, 6, 3 * (child_idx * grad_per_ICEC.num_vertices - i - 1))),
+                grad_DX_X_step[:, :, 3:6],
+                np.zeros((batch, 6, 3 * (grad_per_ICEC.num_branch * grad_per_ICEC.num_vertices - 1 - child_idx * grad_per_ICEC.num_vertices)))
+            ), axis=2)
 
-            grad_per_ICEC.grad_DX_X[:, p_slice, p_slice] = grad_X_pc_pc
-            grad_per_ICEC.grad_DX_X[:, p_slice, c_slice] = grad_X_pc_cc
-            grad_per_ICEC.grad_DX_X[:, c_slice, p_slice] = grad_X_cc_pc
-            grad_per_ICEC.grad_DX_X[:, c_slice, c_slice] = grad_X_cc_cc
+            grad_step_DX_X = grad_DX_X_step_expanded + grad_DX_X_interest + grad_chain_passed_DX_X
 
-            grad_M_pc_pc_interest = grad_per_ICEC.grad_DX_M[:, p_slice, p_mcol:p_mcol + 1].copy()
-            grad_M_pc_cc_interest = grad_per_ICEC.grad_DX_M[:, p_slice, c_mcol:c_mcol + 1].copy()
-            grad_M_cc_pc_interest = grad_per_ICEC.grad_DX_M[:, c_slice, p_mcol:p_mcol + 1].copy()
-            grad_M_cc_cc_interest = grad_per_ICEC.grad_DX_M[:, c_slice, c_mcol:c_mcol + 1].copy()
+            grad_per_ICEC.grad_DX_X[:, p_slice, :] = grad_step_DX_X[:, :3, :]
+            grad_per_ICEC.grad_DX_X[:, c_slice, :] = grad_step_DX_X[:, 3:, :]
 
-            grad_DX_M_interest = np.concatenate(
-                (np.concatenate((grad_M_pc_pc_interest, grad_M_pc_cc_interest), axis=2),
-                 np.concatenate((grad_M_cc_pc_interest, grad_M_cc_cc_interest), axis=2)),
-                axis=1
-            )
+            # ___Update the gradient for the mass matrices___
+            grad_M_pc_interest = grad_per_ICEC.grad_DX_M[:, p_slice, :].copy()
+            grad_M_cc_interest = grad_per_ICEC.grad_DX_M[:, c_slice, :].copy()
+            grad_DX_M_interest = np.concatenate((grad_M_pc_interest, grad_M_cc_interest), axis=1)
 
             grad_chain_passed_DX_M = grad_DX_X_step @ grad_DX_M_interest
-            grad_step_DX_M = grad_DX_M_step + grad_DX_M_interest + grad_chain_passed_DX_M
-            # Assuming grad_step_DX_M has shape (batch, 6, 2)
-            grad_M_pc_pc = grad_step_DX_M[:, :3, :1]  # Top-left corner
-            grad_M_pc_cc = grad_step_DX_M[:, :3, 1:]  # Top-right corner
-            grad_M_cc_pc = grad_step_DX_M[:, 3:, :1]  # Bottom-left corner
-            grad_M_cc_cc = grad_step_DX_M[:, 3:, 1:]  # Bottom-right corner
 
-            grad_per_ICEC.grad_DX_M[:, p_slice, p_mcol:p_mcol + 1] = grad_M_pc_pc
-            grad_per_ICEC.grad_DX_M[:, p_slice, c_mcol:c_mcol + 1] = grad_M_pc_cc
-            grad_per_ICEC.grad_DX_M[:, c_slice, p_mcol:p_mcol + 1] = grad_M_cc_pc
-            grad_per_ICEC.grad_DX_M[:, c_slice, c_mcol:c_mcol + 1] = grad_M_cc_cc
+            grad_DX_M_step_expanded = np.concatenate((
+                np.zeros((batch, 6, i)),
+                grad_DX_M_step[:, :, 0:1],
+                np.zeros((batch, 6, child_idx * grad_per_ICEC.num_vertices - i - 1)),
+                grad_DX_M_step[:, :, 1:2],
+                np.zeros((batch, 6, grad_per_ICEC.num_branch * grad_per_ICEC.num_vertices - 1 - child_idx * grad_per_ICEC.num_vertices))
+            ), axis=2)
+
+            grad_step_DX_M = grad_DX_M_step_expanded + grad_DX_M_interest + grad_chain_passed_DX_M
+            
+            grad_per_ICEC.grad_DX_M[:, p_slice, :] = grad_step_DX_M[:, :3, :]
+            grad_per_ICEC.grad_DX_M[:, c_slice, :] = grad_step_DX_M[:, 3:, :]
 
         return b_DLOs_vertices, grad_per_ICEC
 

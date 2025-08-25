@@ -853,7 +853,7 @@ class DEFT_sim(nn.Module):
             Accumulated total loss (position + velocity) over all timesteps.
         """
         # Number of constraint solution iterations per timestep
-        constraint_loop = 1
+        constraint_loop = 20
 
         # Prepare input to GNN
         inputs = torch.zeros_like(target_b_DLOs_vertices_traj)
@@ -1206,7 +1206,7 @@ class DEFT_sim(nn.Module):
                     # previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
                     # previous_children_vertices_iteration_edge = children_vertices.clone()
 
-                    # # Coupling constraints (parent <-> children rods)
+                    # Coupling constraints (parent <-> children rods)
                     children_vertices = children_vertices.view(-1, self.n_vert, 3)
                     b_DLOs_vertices, grad_per_ICEC = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                         parent_vertices,
@@ -1222,7 +1222,7 @@ class DEFT_sim(nn.Module):
                     self.bkgrad.grad_DX_X = grad_per_ICEC.grad_DX_X
                     self.bkgrad.grad_DX_M = grad_per_ICEC.grad_DX_M
 
-                    # # Finally, general inextensibility constraints along each branch
+                    # Finally, general inextensibility constraints along each branch
                     b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                         self.batch,
                         b_DLOs_vertices,
@@ -1453,7 +1453,7 @@ class DEFT_sim(nn.Module):
             parent_vertices = positions[self.selected_parent_index]
             children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
             children_vertices = children_vertices.view(-1, self.n_vert, 3)
-            # coupling constraints
+            
             positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                 parent_vertices,
                 children_vertices,
