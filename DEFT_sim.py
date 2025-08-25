@@ -853,7 +853,7 @@ class DEFT_sim(nn.Module):
             Accumulated total loss (position + velocity) over all timesteps.
         """
         # Number of constraint solution iterations per timestep
-        constraint_loop = 20
+        constraint_loop = 1
 
         # Prepare input to GNN
         inputs = torch.zeros_like(target_b_DLOs_vertices_traj)
@@ -1207,15 +1207,20 @@ class DEFT_sim(nn.Module):
                     # previous_children_vertices_iteration_edge = children_vertices.clone()
 
                     # # Coupling constraints (parent <-> children rods)
-                    # children_vertices = children_vertices.view(-1, self.n_vert, 3)
-                    # b_DLOs_vertices = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
-                    #     parent_vertices,
-                    #     children_vertices,
-                    #     self.rigid_body_coupling_index,
-                    #     self.coupling_mass_scale,
-                    #     self.selected_parent_index,
-                    #     self.selected_children_index
-                    # )
+                    children_vertices = children_vertices.view(-1, self.n_vert, 3)
+                    b_DLOs_vertices, grad_per_ICEC = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                        parent_vertices,
+                        children_vertices,
+                        self.rigid_body_coupling_index,
+                        self.coupling_mass_scale,
+                        self.selected_parent_index,
+                        self.selected_children_index,
+                        self.mass_matrix[self.selected_parent_index],
+                        self.mass_matrix[self.selected_children_index],
+                        self.bkgrad
+                    )
+                    self.bkgrad.grad_DX_X = grad_per_ICEC.grad_DX_X
+                    self.bkgrad.grad_DX_M = grad_per_ICEC.grad_DX_M
 
                     # Finally, general inextensibility constraints along each branch
                     b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
@@ -1315,9 +1320,9 @@ class DEFT_sim(nn.Module):
                                                                             self.rigid_body_coupling_index,
                                                                             self.parent_mass,
                                                                             self.children_mass,
-                                                                            1*1e-6,# eps_mass
-                                                                            1*1e-8)# eps_position
-        
+                                                                            0*1e-6,# eps_mass
+                                                                            3*1e-8)# eps_position
+
         #--------------calculate analytical ICE gradient----------------
         d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
         d_positions_np = d_positions.detach().numpy()
@@ -1335,6 +1340,7 @@ class DEFT_sim(nn.Module):
                                                             self.clamped_index,
                                                             self.inext_scale,
                                                             mass_scale_pos_inext,
+                                                            coupling_mass_scale_pos,
                                                             self.zero_mask_num,
                                                             self.b_undeformed_vert,
                                                             self.bkgrad_pos,
@@ -1347,11 +1353,13 @@ class DEFT_sim(nn.Module):
                                                             self.clamped_index,
                                                             self.inext_scale,
                                                             mass_scale_neg_inext,
+                                                            coupling_mass_scale_neg,
                                                             self.zero_mask_num,
                                                             self.b_undeformed_vert,
                                                             self.bkgrad_neg,
                                                             self.n_branch,
-                                                            constraint_loop)
+                                                            constraint_loop
+                                                            )
 
         delta_posisiton_pos = b_DLOs_vertices_pos - (b_DLOs_vertices_input.clone() + d_positions_input)
         delta_posisiton_neg = b_DLOs_vertices_neg - (b_DLOs_vertices_input.clone() - d_positions_input)
@@ -1360,7 +1368,7 @@ class DEFT_sim(nn.Module):
         # print('numerical_d_delta_positions', numerical_d_delta_positions)
         # print('analytical_d_delta_positions', analytical_d_delta_positions)
         print('analytical vs numerical ratio', numerical_d_delta_positions / analytical_d_delta_positions)
-    
+
     def set_perturbation(self, undeformed_vert, n_edge, mass_matrix, selected_parent_index, selected_children_index,
                          rigid_body_coupling_index, parent_mass, children_mass, eps_mass, eps_position):
         '''
@@ -1424,7 +1432,7 @@ class DEFT_sim(nn.Module):
         return d_positions, d_mass_diag_vals, d_mass, coupling_mass_scale_pos, coupling_mass_scale_neg, mass_scale_pos_inext, mass_scale_neg_inext
 
     def constraint_loop_iteration(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                    scale, perturbed_mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch, constraint_loop):
+                                    scale, perturbed_mass_scale, perturbed_coup_mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch, constraint_loop):
         '''Iterative simulation loop for constraint satisfaction.
         :param batch: batch size
         :param current_vertices: current positions of all vertices
@@ -1442,23 +1450,21 @@ class DEFT_sim(nn.Module):
 
         positions = current_vertices.clone()
         for _ in range(constraint_loop):
-            # parent_vertices = positions[self.selected_parent_index]
-            # children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
-            # children_vertices = children_vertices.view(-1, self.n_vert, 3)
+            parent_vertices = positions[self.selected_parent_index]
+            children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
+            children_vertices = children_vertices.view(-1, self.n_vert, 3)
             # coupling constraints
-            # positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
-            #     batch,
-            #     n_branch,
-            #     parent_vertices+d_positions[self.selected_parent_index],
-            #     children_vertices+d_positions[self.selected_children_index],
-            #     self.rigid_body_coupling_index,
-            #     d_coupling_mass_scale,
-            #     mass_matrix[self.selected_parent_index],
-            #     mass_matrix[self.selected_children_index],
-            #     self.selected_parent_index,
-            #     self.selected_children_index,
-            #     bkgrad
-            # )
+            positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
+                parent_vertices,
+                children_vertices,
+                self.rigid_body_coupling_index,
+                perturbed_coup_mass_scale,
+                self.selected_parent_index,
+                self.selected_children_index,
+                DLO_mass[self.selected_parent_index],
+                DLO_mass[self.selected_children_index],
+                bkgrad
+            )
 
             positions, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                 batch,

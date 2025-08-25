@@ -408,7 +408,7 @@ class constraints_enforcement(nn.Module):
 
     def Inextensibility_Constraint_Enforcement_Coupling(self, parent_vertices, child_vertices, coupling_index,
                                                         coupling_mass_scale, selected_parent_index,
-                                                        selected_children_index):
+                                                        selected_children_index, parent_mass, children_mass, bkgrad):
         """
         Enforces inextensibility or position constraints between a 'parent' rod and a 'child' rod
         at a specific coupling index.
@@ -420,11 +420,15 @@ class constraints_enforcement(nn.Module):
             coupling_mass_scale (torch.Tensor): Matrix scale for how parent/child share corrections.
             selected_parent_index (list): Which rods in a bigger scene are 'parents'.
             selected_children_index (list): Which rods in the bigger scene are 'children'.
+            parent_mass (torch.Tensor): Parent mass matrices, shape (batch,n_parents, n_vertices, 3).
+            children_mass (torch.Tensor): Child mass matrices, shape (batch,n_children, n_vertices, 3).
 
         Returns:
             b_DLOs_vertices (torch.Tensor): Combined or updated vertices for the rods
                                             after enforcing coupling constraints.
         """
+        # Initialize store gradient for backpropagation
+        grad_per_ICEC = bkgrad
         # Vector from parent to child's first vertex
         updated_edges = child_vertices[:, 0] - parent_vertices[:, coupling_index].view(-1, 3)
 
@@ -448,7 +452,74 @@ class constraints_enforcement(nn.Module):
         b_DLOs_vertices[selected_parent_index] = parent_vertices
         b_DLOs_vertices[selected_children_index] = child_vertices
 
-        return b_DLOs_vertices
+        # ------------------------Compute gradient for backpropagation------------------------
+        batch = grad_per_ICEC.batch
+        for i, child_idx in zip(coupling_index, selected_children_index):
+            pm = parent_mass[:, i]  # (batch, 3, 3)
+            cm = children_mass[(child_idx-1)*batch:(child_idx*batch), 0]  # (batch, 3, 3)
+            pv = parent_vertices[:, i:i + 1, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+            cv = child_vertices[(child_idx-1)*batch:(child_idx*batch), 0, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+
+            grad_X_pc_pc_step, grad_X_pc_cc_step,grad_X_cc_pc_step,grad_X_cc_cc_step, grad_DX_X_step = gradients.grad_DX_X_ICEC_batch(pm, cm)  # (batch, 6, 6)
+            grad_M_pc_pc_step, grad_M_pc_cc_step, grad_M_cc_pc_step, grad_M_cc_cc_step, grad_DX_M_step = gradients.grad_DX_M_ICEC_batch(pm, cm, pv, cv)
+
+            p_slice = slice(3 * (selected_parent_index * grad_per_ICEC.num_vertices + i),
+                            3 * (selected_parent_index * grad_per_ICEC.num_vertices + i) + 3)
+            p_mcol = selected_parent_index * grad_per_ICEC.num_vertices + i
+            c_slice = slice(3 * (child_idx * grad_per_ICEC.num_vertices + 0),
+                            3 * (child_idx * grad_per_ICEC.num_vertices + 0) + 3)
+            c_mcol = child_idx * grad_per_ICEC.num_vertices + 0
+
+            # extract the old gradient for the two vertices from gradient storage
+            grad_X_pc_pc_interest = grad_per_ICEC.grad_DX_X[:, p_slice, p_slice].copy()
+            grad_X_pc_cc_interest = grad_per_ICEC.grad_DX_X[:, p_slice, c_slice].copy()
+            grad_X_cc_pc_interest = grad_per_ICEC.grad_DX_X[:, c_slice, p_slice].copy()
+            grad_X_cc_cc_interest = grad_per_ICEC.grad_DX_X[:, c_slice, c_slice].copy()
+
+            grad_DX_X_interest = np.concatenate(
+                (np.concatenate((grad_X_pc_pc_interest, grad_X_pc_cc_interest), axis=2),
+                 np.concatenate((grad_X_cc_pc_interest, grad_X_cc_cc_interest), axis=2)),
+                axis=1
+            )
+
+            grad_chain_passed_DX_X = grad_DX_X_step @ grad_DX_X_interest
+
+            grad_step_DX_X = grad_DX_X_step + grad_DX_X_interest + grad_chain_passed_DX_X
+            grad_X_pc_pc = grad_step_DX_X[:, :3, :3]
+            grad_X_pc_cc = grad_step_DX_X[:, :3, 3:]
+            grad_X_cc_pc = grad_step_DX_X[:, 3:, :3]
+            grad_X_cc_cc = grad_step_DX_X[:, 3:, 3:]
+
+            grad_per_ICEC.grad_DX_X[:, p_slice, p_slice] = grad_X_pc_pc
+            grad_per_ICEC.grad_DX_X[:, p_slice, c_slice] = grad_X_pc_cc
+            grad_per_ICEC.grad_DX_X[:, c_slice, p_slice] = grad_X_cc_pc
+            grad_per_ICEC.grad_DX_X[:, c_slice, c_slice] = grad_X_cc_cc
+
+            grad_M_pc_pc_interest = grad_per_ICEC.grad_DX_M[:, p_slice, p_mcol:p_mcol + 1].copy()
+            grad_M_pc_cc_interest = grad_per_ICEC.grad_DX_M[:, p_slice, c_mcol:c_mcol + 1].copy()
+            grad_M_cc_pc_interest = grad_per_ICEC.grad_DX_M[:, c_slice, p_mcol:p_mcol + 1].copy()
+            grad_M_cc_cc_interest = grad_per_ICEC.grad_DX_M[:, c_slice, c_mcol:c_mcol + 1].copy()
+
+            grad_DX_M_interest = np.concatenate(
+                (np.concatenate((grad_M_pc_pc_interest, grad_M_pc_cc_interest), axis=2),
+                 np.concatenate((grad_M_cc_pc_interest, grad_M_cc_cc_interest), axis=2)),
+                axis=1
+            )
+
+            grad_chain_passed_DX_M = grad_DX_X_step @ grad_DX_M_interest
+            grad_step_DX_M = grad_DX_M_step + grad_DX_M_interest + grad_chain_passed_DX_M
+            # Assuming grad_step_DX_M has shape (batch, 6, 2)
+            grad_M_pc_pc = grad_step_DX_M[:, :3, :1]  # Top-left corner
+            grad_M_pc_cc = grad_step_DX_M[:, :3, 1:]  # Top-right corner
+            grad_M_cc_pc = grad_step_DX_M[:, 3:, :1]  # Bottom-left corner
+            grad_M_cc_cc = grad_step_DX_M[:, 3:, 1:]  # Bottom-right corner
+
+            grad_per_ICEC.grad_DX_M[:, p_slice, p_mcol:p_mcol + 1] = grad_M_pc_pc
+            grad_per_ICEC.grad_DX_M[:, p_slice, c_mcol:c_mcol + 1] = grad_M_pc_cc
+            grad_per_ICEC.grad_DX_M[:, c_slice, p_mcol:p_mcol + 1] = grad_M_cc_pc
+            grad_per_ICEC.grad_DX_M[:, c_slice, c_mcol:c_mcol + 1] = grad_M_cc_cc
+
+        return b_DLOs_vertices, grad_per_ICEC
 
     def quaternion_magnitude(self, quaternion):
         """

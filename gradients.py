@@ -215,6 +215,16 @@ def grad_DX_Xinit_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):
 
 
 def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
+    """
+    Robust batch gradient for inextensibility wrt mass matrix.
+    Inputs:
+      M_0, M_1:        (B,3,3)
+      X_0, X_1:        (B,3,1)
+      X_0_init, X_1_init: (B,3,1)
+      mask:            (B,) or (B,1) or (B,1,1); True = active edge
+    Output:
+      grad_DX_X:       (B,6,6)
+    """
     # to numpy (no-ops if already np)
     def to_np(x): return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
 
@@ -372,6 +382,7 @@ def grad_DX_X_ICEC_batch(M_0, M_1):
 
     the batch here is actually num_batch * num_branch, while the branch is num_branch
     """
+
     M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
     batch_size = M_0.shape[0]
 
