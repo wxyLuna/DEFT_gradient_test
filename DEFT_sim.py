@@ -853,7 +853,7 @@ class DEFT_sim(nn.Module):
             Accumulated total loss (position + velocity) over all timesteps.
         """
         # Number of constraint solution iterations per timestep
-        constraint_loop = 1
+        constraint_loop = 20
 
         # Prepare input to GNN
         inputs = torch.zeros_like(target_b_DLOs_vertices_traj)
@@ -912,19 +912,6 @@ class DEFT_sim(nn.Module):
         # Main loop over timesteps
         for ith in range(time_horizon):
             print(f"Iteration {ith}/{time_horizon}")
-            # Perturbations for finite difference gradient checking
-            (d_positions_input, d_mass_diag_vals, d_mass,
-             coupling_mass_scale_pos, coupling_mass_scale_neg,
-             mass_scale_pos_inext, mass_scale_neg_inext) = self.set_perturbation(self.b_undeformed_vert,
-                                                                                 self.n_edge,
-                                                                                 self.mass_matrix,
-                                                                                 self.selected_parent_index,
-                                                                                 self.selected_children_index,
-                                                                                 self.rigid_body_coupling_index,
-                                                                                 self.parent_mass,
-                                                                                 self.children_mass,
-                                                                                 0*1e-6,# eps_mass
-                                                                                 1*1e-8)# eps_position
 
             # 1) Retrieve current/previous BDLO states
             if ith == 0:
@@ -1247,48 +1234,7 @@ class DEFT_sim(nn.Module):
                     self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                     self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
-                #--------------calculate analytical ICE gradient----------------
-                d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
-                d_positions_np = d_positions.detach().numpy()
-                d_mass_diag_vals_np = d_mass_diag_vals.detach().numpy()
-                analytical_d_delta_positions = np.matmul(self.bkgrad.grad_DX_X, d_positions_np) + np.matmul(self.bkgrad.grad_DX_M, d_mass_diag_vals_np.reshape(self.batch,self.n_branch*self.n_vert,1))
-                analytical_d_delta_positions = analytical_d_delta_positions.reshape(self.batch * self.n_branch, self.n_vert,3)
-
-                #--------------calculate numerical ICE gradient-----------------
-                b_DLOs_vertices_pos_input = b_DLOs_vertices_input.clone() + d_positions_input
-                b_DLOs_vertices_neg_input = b_DLOs_vertices_input.clone() - d_positions_input
-                b_DLOs_vertices_pos = self.constraint_loop_iteration(self.batch,
-                                                                    b_DLOs_vertices_pos_input,
-                                                                    self.batched_m_restEdgeL,
-                                                                    self.mass_matrix + d_mass,
-                                                                    self.clamped_index,
-                                                                    self.inext_scale,
-                                                                    mass_scale_pos_inext,
-                                                                    self.zero_mask_num,
-                                                                    self.b_undeformed_vert,
-                                                                    self.bkgrad_pos,
-                                                                    self.n_branch,
-                                                                    constraint_loop)
-                b_DLOs_vertices_neg = self.constraint_loop_iteration(self.batch,
-                                                                    b_DLOs_vertices_neg_input,
-                                                                    self.batched_m_restEdgeL,
-                                                                    self.mass_matrix - d_mass,
-                                                                    self.clamped_index,
-                                                                    self.inext_scale,
-                                                                    mass_scale_neg_inext,
-                                                                    self.zero_mask_num,
-                                                                    self.b_undeformed_vert,
-                                                                    self.bkgrad_neg,
-                                                                    self.n_branch,
-                                                                    constraint_loop)
-
-                delta_posisiton_pos = b_DLOs_vertices_pos - (b_DLOs_vertices_input.clone() + d_positions_input)
-                delta_posisiton_neg = b_DLOs_vertices_neg - (b_DLOs_vertices_input.clone() - d_positions_input)
-                d_delta_positions_ICE = (delta_posisiton_pos - delta_posisiton_neg) / 2
-                numerical_d_delta_positions = d_delta_positions_ICE.detach().cpu().numpy()
-                # print('numerical_d_delta_positions', numerical_d_delta_positions)
-                # print('analytical_d_delta_positions', analytical_d_delta_positions)
-                print('analytical vs numerical ratio', numerical_d_delta_positions / analytical_d_delta_positions)
+                self.numerical_gradient_checking(constraint_loop, self.bkgrad, b_DLOs_vertices_input)
 
 
 
@@ -1357,7 +1303,64 @@ class DEFT_sim(nn.Module):
         # Return the accumulated losses
         return traj_loss_eval, total_loss
 
+    def numerical_gradient_checking(self, constraint_loop, bkgrad, b_DLOs_vertices_input):
+        # Perturbations for finite difference gradient checking
+        (d_positions_input, d_mass_diag_vals, d_mass,
+        coupling_mass_scale_pos, coupling_mass_scale_neg,
+        mass_scale_pos_inext, mass_scale_neg_inext) = self.set_perturbation(self.b_undeformed_vert,
+                                                                            self.n_edge,
+                                                                            self.mass_matrix,
+                                                                            self.selected_parent_index,
+                                                                            self.selected_children_index,
+                                                                            self.rigid_body_coupling_index,
+                                                                            self.parent_mass,
+                                                                            self.children_mass,
+                                                                            1*1e-6,# eps_mass
+                                                                            1*1e-8)# eps_position
+        
+        #--------------calculate analytical ICE gradient----------------
+        d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
+        d_positions_np = d_positions.detach().numpy()
+        d_mass_diag_vals_np = d_mass_diag_vals.detach().numpy()
+        analytical_d_delta_positions = np.matmul(bkgrad.grad_DX_X, d_positions_np) + np.matmul(bkgrad.grad_DX_M, d_mass_diag_vals_np.reshape(self.batch,self.n_branch*self.n_vert,1))
+        analytical_d_delta_positions = analytical_d_delta_positions.reshape(self.batch * self.n_branch, self.n_vert,3)
 
+        #--------------calculate numerical ICE gradient-----------------
+        b_DLOs_vertices_pos_input = b_DLOs_vertices_input.clone() + d_positions_input
+        b_DLOs_vertices_neg_input = b_DLOs_vertices_input.clone() - d_positions_input
+        b_DLOs_vertices_pos = self.constraint_loop_iteration(self.batch,
+                                                            b_DLOs_vertices_pos_input,
+                                                            self.batched_m_restEdgeL,
+                                                            self.mass_matrix + d_mass,
+                                                            self.clamped_index,
+                                                            self.inext_scale,
+                                                            mass_scale_pos_inext,
+                                                            self.zero_mask_num,
+                                                            self.b_undeformed_vert,
+                                                            self.bkgrad_pos,
+                                                            self.n_branch,
+                                                            constraint_loop)
+        b_DLOs_vertices_neg = self.constraint_loop_iteration(self.batch,
+                                                            b_DLOs_vertices_neg_input,
+                                                            self.batched_m_restEdgeL,
+                                                            self.mass_matrix - d_mass,
+                                                            self.clamped_index,
+                                                            self.inext_scale,
+                                                            mass_scale_neg_inext,
+                                                            self.zero_mask_num,
+                                                            self.b_undeformed_vert,
+                                                            self.bkgrad_neg,
+                                                            self.n_branch,
+                                                            constraint_loop)
+
+        delta_posisiton_pos = b_DLOs_vertices_pos - (b_DLOs_vertices_input.clone() + d_positions_input)
+        delta_posisiton_neg = b_DLOs_vertices_neg - (b_DLOs_vertices_input.clone() - d_positions_input)
+        d_delta_positions_ICE = (delta_posisiton_pos - delta_posisiton_neg) / 2
+        numerical_d_delta_positions = d_delta_positions_ICE.detach().cpu().numpy()
+        # print('numerical_d_delta_positions', numerical_d_delta_positions)
+        # print('analytical_d_delta_positions', analytical_d_delta_positions)
+        print('analytical vs numerical ratio', numerical_d_delta_positions / analytical_d_delta_positions)
+    
     def set_perturbation(self, undeformed_vert, n_edge, mass_matrix, selected_parent_index, selected_children_index,
                          rigid_body_coupling_index, parent_mass, children_mass, eps_mass, eps_position):
         '''
