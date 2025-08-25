@@ -77,6 +77,38 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask, eps=1e-12,
 
     return DX_0, DX_1
 
+def func_DX_ICECitr_batch(M_0, M_1, X_0, X_1):
+    """
+    Batch version of Gradient of the inextensibility coupling constraint iterative function with respect to the positions X_0 and X_1.
+
+    # Inputs:
+    - M_0: [batch*n_parent_branch, n_vertices, 3, 3] mass matrix at two coupling index of parent branch
+    - M_1: [batch*n_child_branch, 3, 3] mass matrix of the first index of two children branches
+
+
+    # Outputs:
+    - grad_X_pc_pc: [batch, 3, 3] gradient of DX_pc with respect to parent branch mass matrix at two coupling index M_pc
+    - grad_X_pc_cc: [batch, 3, 3] gradient of DX_pc with respect to two children branches mass matrix at two coupling index M_cc
+    - grad_X_cc_pc: [batch, 3, 3] gradient of two children branch's DX_cc with respect to parent branch mass matrix M_pc
+    - grad_X_cc_cc: [batch, 3, 3] gradient of two children branch's DX_cc with respect to their own mass matrix M_cc
+
+    the batch here is actually num_batch * num_branch, while the branch is num_branch
+    """
+
+    M_0, M_1 = M_0.detach().cpu().numpy(), M_1.detach().cpu().numpy()
+    X_0, X_1 = X_0.detach().cpu().numpy(), X_1.detach().cpu().numpy()
+    batch_size = M_0.shape[0]
+
+    # Compute M_param for each batch
+    M_param = np.linalg.inv(M_0 + M_1)  # [batch_size, 3, 3]
+
+    # Compute Edge_update
+    d_X0 = M_1 @ M_param @ (X_1 - X_0)  # [batch_size, 3, 1]
+    d_X1 = M_0 @ M_param @ (X_0 - X_1)  # [batch_size, 3, 1]
+    print('updated edge in function',X_1 - X_0)
+
+    return d_X0, d_X1
+
 
 
 def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init):

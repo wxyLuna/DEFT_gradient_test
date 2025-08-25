@@ -1222,7 +1222,7 @@ class DEFT_sim(nn.Module):
                     self.bkgrad.grad_DX_X = grad_per_ICEC.grad_DX_X
                     self.bkgrad.grad_DX_M = grad_per_ICEC.grad_DX_M
 
-                    # Finally, general inextensibility constraints along each branch
+                    # # Finally, general inextensibility constraints along each branch
                     b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
                         self.batch,
                         b_DLOs_vertices,
@@ -1320,8 +1320,8 @@ class DEFT_sim(nn.Module):
                                                                             self.rigid_body_coupling_index,
                                                                             self.parent_mass,
                                                                             self.children_mass,
-                                                                            0*1e-6,# eps_mass
-                                                                            3*1e-8)# eps_position
+                                                                            1*1e-6,# eps_mass
+                                                                            1*1e-8)# eps_position
 
         #--------------calculate analytical ICE gradient----------------
         d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)

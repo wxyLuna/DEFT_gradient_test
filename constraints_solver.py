@@ -9,7 +9,7 @@ from numpy.core.defchararray import lower
 
 torch.set_default_dtype(torch.float64)
 import torch.nn as nn
-from iterative_gradients import func_DX_ICitr_batch
+from iterative_gradients import func_DX_ICitr_batch, func_DX_ICECitr_batch
 import gradients
 import numpy as np
 
@@ -431,7 +431,9 @@ class constraints_enforcement(nn.Module):
         grad_per_ICEC = bkgrad
         # Vector from parent to child's first vertex
         updated_edges = child_vertices[:, 0] - parent_vertices[:, coupling_index].view(-1, 3)
-
+        print('updated_edge', updated_edges)
+        parent_vertices_copy = parent_vertices.clone()
+        child_vertices_copy = child_vertices.clone()
         # coupling_mass_scale => (l1, l2)
         l1 = coupling_mass_scale[:, 0]
         l2 = coupling_mass_scale[:, 1]
@@ -457,8 +459,25 @@ class constraints_enforcement(nn.Module):
         for i, child_idx in zip(coupling_index, selected_children_index):
             pm = parent_mass[:, i]  # (batch, 3, 3)
             cm = children_mass[(child_idx-1)*batch:(child_idx*batch), 0]  # (batch, 3, 3)
-            pv = parent_vertices[:, i:i + 1, :].reshape(batch, 3, 1)  # (batch, 3, 1)
-            cv = child_vertices[(child_idx-1)*batch:(child_idx*batch), 0, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+            pv = parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+            cv = child_vertices_copy[(child_idx-1)*batch:(child_idx*batch), 0, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+
+            # this calculation is only for checking the ICEC equation result vs. the ICEC function's output
+            # turn on the switch if needed, default is off
+            calculate_DX = False
+            if calculate_DX:
+                # ICE function output for DX
+
+                dx_0 = (l1 @ updated_edges.unsqueeze(dim=-1))[child_idx- 1:child_idx,:,:]
+                dx_1 = (l2 @ updated_edges.unsqueeze(dim=-1))[child_idx- 1:child_idx,:,:]
+                print('l1',l1)
+                # ICE equation output for DX
+                dx_0, dx_1 = dx_0.detach().cpu().numpy(),dx_1.detach().cpu().numpy()
+                DX_0, DX_1 = func_DX_ICECitr_batch(pm, cm, pv, cv)
+
+
+                print('DX parent ratio', DX_0 / dx_0)
+                print('DX child ratio', DX_1 / dx_1)
 
             grad_X_pc_pc_step, grad_X_pc_cc_step,grad_X_cc_pc_step,grad_X_cc_cc_step, grad_DX_X_step = gradients.grad_DX_X_ICEC_batch(pm, cm)  # (batch, 6, 6)
             grad_M_pc_pc_step, grad_M_pc_cc_step, grad_M_cc_pc_step, grad_M_cc_cc_step, grad_DX_M_step = gradients.grad_DX_M_ICEC_batch(pm, cm, pv, cv)
