@@ -447,5 +447,196 @@ def grad_DX_M_ICEC_batch(M_pc, M_cc, X_pc, X_cc):
         axis=1
     )
 
-    
     return grad_M_pc_pc, grad_M_pc_cc, grad_M_cc_pc, grad_M_cc_cc, grad_DX_M
+
+class RCEPC_gradient:
+    def __init__(self):
+        pass
+    
+    def hat(self, r):
+        """
+        Compute the hat operator for a 3D vector, converting it to a skew-symmetric matrix.
+
+        Args:
+            r: axis_angle, [batch, 3].
+        Returns:
+            hat_r: skew-symmetric matrix, [batch, 3, 3].
+        """
+        batch_size = r.shape[0]
+        hat_r = np.zeros((batch_size, 3, 3), dtype=np.float64)
+        hat_r[:, 0, 1] = -r[:, 2]
+        hat_r[:, 0, 2] = r[:, 1]
+        hat_r[:, 1, 0] = r[:, 2]
+        hat_r[:, 1, 2] = -r[:, 0]
+        hat_r[:, 2, 0] = -r[:, 1]
+        hat_r[:, 2, 1] = r[:, 0]
+        return hat_r
+    
+    def left_jacobian_so3(self, r):
+        """
+        Compute the left Jacobian of SO(3) for a batch of rotation vectors.
+        Args:
+            r: axis_angle, [batch, 3].
+        Returns:
+            J: left Jacobian, [batch, 3, 3].
+        """
+        theta = np.linalg.norm(r, axis=-1, keepdims=True)
+        theta_safe = np.where(theta == 0, 1, theta)
+        hat_r = self.hat(r)  # [batch, 3, 3]
+
+        I = np.broadcast_to(np.eye(3), r.shape[:-1] + (3, 3))
+
+        a = (1 - np.cos(theta)) / (theta_safe ** 2)
+        b = (theta - np.sin(theta)) / (theta_safe ** 3)
+
+        # Small-angle fix
+        eps = 1e-6
+        small = theta < eps
+        a = np.where(small, 0.5 - theta**2 / 24 + theta**4 / 720, a)
+        b = np.where(small, 1/6 - theta**2 / 120 + theta**4 / 5040, b)
+
+        J = I - a * hat_r + b * (hat_r @ hat_r)
+        return J
+    
+    def ruv_jacobian(self, u, v, eps=1e-8):
+        """
+        Compute the Jacobian of the rotation vector with respect to the input vectors u and v.
+
+        Args:
+            u: first vector, [batch, 3].
+            v: second vector, [batch, 3].
+
+        Returns:
+            S_u: Jacobian matrix, [batch, 3, 3].
+            S_v: Jacobian matrix, [batch, 3, 3].
+        """
+        batch_size = u.shape[0]
+
+        a = np.cross(u, v)                                # [batch,3]
+        c = np.sum(u * v, axis=-1, keepdims=True)         # [batch,1]
+        s = np.linalg.norm(a, axis=-1, keepdims=True)     # [batch,1]
+
+        Su = np.zeros((batch_size, 3, 3))
+        Sv = np.zeros((batch_size, 3, 3))
+
+        mask = (s[:,0] < eps)    # [batch]
+
+        # small angle approximation
+        if np.any(mask):
+            Su[mask] = -self.hat(v[mask])   # [m,3,3]
+            Sv[mask] =  self.hat(u[mask])
+
+        if np.any(~mask):
+            idx = np.where(~mask)[0]
+            a_sel, u_sel, v_sel = a[idx], u[idx], v[idx]
+            c_sel, s_sel = c[idx], s[idx]
+
+            theta = np.arctan2(s_sel, c_sel)
+            n = a_sel / s_sel
+
+            I = np.eye(3)[None, :, :]
+            A = (theta/s_sel)[:,None,None] * I + (c_sel - theta/s_sel)[:, :, None] * np.einsum('bi,bj->bij', n, n)
+
+            Su[idx] = A @ (-self.hat(v_sel)) - s_sel[:, :, None] * np.einsum('bi,bj->bij', n, v_sel)
+            Sv[idx] = A @ self.hat(u_sel) - s_sel[:, :, None] * np.einsum('bi,bj->bij', n, u_sel)
+
+        return Su, Sv
+    
+    def gradient_DX_MOI(self, Xpc0, Xpc1, Xcc0, Xcc1, DRpc, DRcc, Drpc, Drcc, Dr, MOIpc, MOIcc):
+        """
+        Compute the gradient wrt moments of inertia
+        Args:
+            Xpc0: parent rod vertices at pc, [batch, 3].
+            Xpc1: parent rod vertices at pc+1, [batch, 3].
+            Xcc0: child rod vertices at cc, [batch, 3].
+            Xcc1: child rod vertices at cc+1, [batch, 3].
+            DRpc: rotational offset of parent rod, in the form of SO(3) rotation, [batch, 3, 3].
+            DRcc: rotational offset of child rod, in the form of SO(3) rotation, [batch, 3, 3].
+            Drpc: axis-angle representation of parent rod rotational offset, [batch, 3].
+            Drcc: axis-angle representation of child rod rotational offset, [batch, 3].
+            Dr: axis-angle representation of the difference between parent and child rods, [batch, 3].
+            MOIpc: moments of inertia for parent rods, [batch, 3, 3].
+            MOIcc: moments of inertia for child rods, [batch, 3, 3].
+        """
+
+        Epc = Xpc1 - Xpc0  # parent edge vector, [batch, 3]
+        Ecc = Xcc1 - Xcc0  # child edge vector, [batch, 3]
+        
+        J_00 = - DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ np.diag(Dr) @ MOIcc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{pc+1} / MOI_{pc}
+        J_01 = DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ np.diag(Dr) @ MOIpc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{pc+1} / MOI_{cc}
+        J_10 = - DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ np.diag(Dr) @ MOIcc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{cc+1} / MOI_{pc}
+        J_11 = DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ np.diag(Dr) @ MOIpc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{cc+1} / MOI_{cc}
+
+        J = np.zeros((Xpc0.shape[0], 6, 6), dtype=np.float64)
+        J[:, :3, :3] = J_00
+        J[:, :3, 3:] = J_01
+        J[:, 3:, :3] = J_10
+        J[:, 3:, 3:] = J_11
+
+        return J_00, J_01, J_10, J_11, J
+
+    def gradient_DX_X(self, Xpc0, Xpc1, Xcc0, Xcc1, DRpc, DRcc, Drpc, Drcc, Dr, MOIpc, MOIcc, Rcc, rpc, rcc, Xpc0_init, Xpc1_init, Xcc0_init, Xcc1_init):
+        """
+        Compute the gradient wrt rod vertices
+        Args:
+            Xpc0: parent rod vertices at pc, [batch, 3].
+            Xpc1: parent rod vertices at pc+1, [batch, 3].
+            Xcc0: child rod vertices at cc, [batch, 3].
+            Xcc1: child rod vertices at cc+1, [batch, 3].
+            DRpc: rotational offset of parent rod, in the form of SO(3) rotation, [batch, 3, 3].
+            DRcc: rotational offset of child rod, in the form of SO(3) rotation, [batch, 3, 3].
+            Drpc: axis-angle representation of parent rod rotational offset, [batch, 3].
+            Drcc: axis-angle representation of child rod rotational offset, [batch, 3].
+            Dr: axis-angle representation of the difference between parent and child rods, [batch, 3].
+            MOIpc: moments of inertia for parent rods, [batch, 3, 3].
+            MOIcc: moments of inertia for child rods, [batch, 3, 3].
+            Rcc: rotation matrix for child rods, [batch, 3, 3].
+            rpc: parent rod edge vector, [batch, 3].
+            rcc: child rod edge vector, [batch, 3].
+            Xpc0_init: initial parent rod vertices at pc, [batch, 3].
+            Xpc1_init: initial parent rod vertices at pc+1, [batch, 3].
+            Xcc0_init: initial child rod vertices at cc, [batch, 3].
+            Xcc1_init: initial child rod vertices at cc+1, [batch, 3].
+        """
+        batch_size = Xpc0.shape[0]
+
+        Epc = Xpc1 - Xpc0  # parent edge vector, [batch, 3]
+        Ecc = Xcc1 - Xcc0  # child edge vector, [batch, 3]
+        Epc_init = Xpc1_init - Xpc0_init  # initial parent edge vector, [batch, 3]
+        Ecc_init = Xcc1_init - Xcc0_init  # initial child edge vector, [batch, 3]
+
+        epc = Epc / np.linalg.norm(Epc, axis=-1, keepdims=True)  # normalized parent edge vector, [batch, 3]
+        ecc = Ecc / np.linalg.norm(Ecc, axis=-1, keepdims=True)  # normalized child edge vector, [batch, 3]
+        epc_init = Epc_init / np.linalg.norm(Epc_init, axis=-1, keepdims=True) # normalized initial parent edge vector, [batch, 3]
+        ecc_init = Ecc_init / np.linalg.norm(Ecc_init, axis=-1, keepdims=True) # normalized initial child edge vector, [batch, 3]
+
+        _, Sv_pc = self.ruv_jacobian(epc_init, epc)  # Jacobian for parent edge
+        _, Sv_cc = self.ruv_jacobian(ecc_init, ecc)  # Jacobian for child edge
+
+        j_norm_pc = ((I - np.einsum('bi,bj->bij', epc, epc)) / np.linalg.norm(Epc, axis=-1, keepdims=True))
+        j_norm_cc = ((I - np.einsum('bi,bj->bij', ecc, ecc)) / np.linalg.norm(Ecc, axis=-1, keepdims=True))
+
+        MOIs0 = (-MOIcc) @ np.linalg.inv(MOIpc + MOIcc)
+        MOIs1 = MOIpc @ np.linalg.inv(MOIpc + MOIcc)
+
+        I = np.broadcast_to(np.eye(3), (batch_size, 3, 3))
+        J_00 = (DRpc - I) - DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ MOIs0 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rpc) @ Sv_pc @ j_norm_pc # [batch, 3, 3], DX_{pc+1} / X_{pc+1}
+        J_01 = -(DRpc - I) + DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ MOIs0 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rpc) @ Sv_pc @ j_norm_pc # [batch, 3, 3], DX_{pc+1} / X_{pc}
+        J_02 = DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ MOIs0 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rcc) @ Sv_cc @ j_norm_cc # [batch, 3, 3], DX_{pc+1} / X_{cc+1}
+        J_03 = -DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ MOIs0 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rcc) @ Sv_cc @ j_norm_cc # [batch, 3, 3], DX_{pc+1} / X_{cc}
+        J_10 = -DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ MOIs1 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rpc) @ Sv_pc @ j_norm_pc # [batch, 3, 3], DX_{cc+1} / X_{pc+1}
+        J_11 = DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ MOIs1 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rpc) @ Sv_pc @ j_norm_pc # [batch, 3, 3], DX_{cc+1} / X_{pc}
+        J_12 = (DRcc - I) + DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ MOIs1 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rcc) @ Sv_cc @ j_norm_cc # [batch, 3, 3], DX_{cc+1} / X_{cc+1}
+        J_13 = -(DRcc - I) - DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ MOIs1 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rcc) @ Sv_cc @ j_norm_cc # [batch, 3, 3], DX_{cc+1} / X_{cc+1}
+
+        J = np.zeros((Xpc0.shape[0], 6, 12), dtype=np.float64)
+        J[:, :3, 0:3] = J_01
+        J[:, :3, 3:6] = J_00
+        J[:, :3, 6:9] = J_03
+        J[:, :3, 9:12] = J_02
+        J[:, 3:, 0:3] = J_11
+        J[:, 3:, 3:6] = J_10
+        J[:, 3:, 6:9] = J_13
+        J[:, 3:, 9:12] = J_12
+
+        return J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J
