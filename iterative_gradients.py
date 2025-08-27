@@ -5,7 +5,7 @@ import numpy as np
 
 import numpy as np
 
-def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask, eps=1e-12, reg=1e-9):
+def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask,  i):
     """
     Batch version of Inextensibility Constraint Iterative Function (robust & masked)
 
@@ -36,46 +36,66 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask, eps=1e-12,
         mask = mask[:, None, None]
     elif mask.ndim == 2:
         mask = mask[:, :, None]
-
+    DX_0 = np.zeros((B, 3, 1), dtype=np.float64)
+    DX_1 = np.zeros((B, 3, 1), dtype=np.float64)
     # Detect inactive batches
     m0_zero = (np.abs(M_0).sum(axis=(1,2), keepdims=True) == 0)
     m1_zero = (np.abs(M_1).sum(axis=(1,2), keepdims=True) == 0)
     x1_zero = (np.abs(X_1).sum(axis=(1,2), keepdims=True) == 0)
     x1i_zero= (np.abs(X_1_init).sum(axis=(1,2), keepdims=True) == 0)
+    # print(f"m0_zero: {m0_zero.reshape(-1).astype(int)}")
+    # print(f"m1_zero: {m1_zero.reshape(-1).astype(int)}")
+    # print(f"x1_zero: {x1_zero.reshape(-1).astype(int)}")
+    # print(f"x1i_zero: {x1i_zero.reshape(-1).astype(int)}")
+    # print(f"mask: {mask.reshape(-1).astype(int)}")
 
     bothM_zero = m0_zero & m1_zero
+
     tail_zero  = m1_zero & x1_zero & x1i_zero
+
     active     = (~bothM_zero) & (~tail_zero) & mask   # shape (B,1,1)
 
+
+    idx = np.where(active)[0]
+    M0v, M1v = M_0[idx], M_1[idx]
+    X0v, X1v = X_0[idx], X_1[idx]
+    X0iv, X1iv = X_0_init[idx], X_1_init[idx]
     # Compute M_param (with regularization)
-    sumM = M_0 + M_1
-    regI = np.eye(3)[None, :, :] * reg
-    M_param = np.linalg.inv(sumM + regI)  # shape (B,3,3)
+    sumM = M0v + M1v
+    M_param = np.linalg.inv(sumM)  # shape (B,3,3)
 
     # Compute Edge and Edge_init
-    Edge = X_1 - X_0           # (B,3,1)
-    Edge_init = X_1_init - X_0_init  # (B,3,1)
+    Edge = X1v - X0v           # (B,3,1)
+    Edge_init = X1iv - X0iv  # (B,3,1)
+    diff = Edge - Edge_init
+    norm = np.linalg.norm(diff, axis=1)
 
     # Edge lengths
     L2 = np.sum(Edge**2, axis=1, keepdims=True)         # (B,1,1)
     L0_2 = np.sum(Edge_init**2, axis=1, keepdims=True)  # (B,1,1)
     denom = L2 + L0_2
-    denom = np.where(denom < eps, eps, denom)           # prevent division by zero
+    # denom = np.where(denom < eps, eps, denom)           # prevent division by zero
+    # print('L0_2', L0_2)
+    # print('L2',L2)
 
     # Lambda
     lambda_param = (L2 - L0_2) / denom                  # (B,1,1)
-    # lambda_param[~active] = 0.0                         # zero inactive edges
 
-    # DX computation (same einsum style)
-    DX_0 = np.einsum('bij,bjk,bkl->bil', M_1, M_param, Edge) * lambda_param  # (B,3,1)
-    DX_1 = -np.einsum('bij,bjk,bkl->bil', M_0, M_param, Edge) * lambda_param  # (B,3,1)
 
-    # Ensure inactive edges return zero
-    inactive_idx = np.where(~active.reshape(B))[0]
-    DX_0[inactive_idx] = 0.0
-    DX_1[inactive_idx] = 0.0
 
-    return DX_0, DX_1
+
+
+
+    DX0_manual = np.einsum("bij,bjk,bkl->bil", M1v, M_param, Edge) * lambda_param
+
+    DX_0[idx] = np.einsum('bij,bjk,bkl->bil', M1v, M_param, Edge) * lambda_param  # (B,3,1)
+    DX_1[idx] = -np.einsum('bij,bjk,bkl->bil', M0v, M_param, Edge) * lambda_param  # (B,3,1)
+ # Ensure inactive edges return zero
+    # inactive_idx = np.where(~active.reshape(B))[0]
+    # DX_0[inactive_idx] = 0.0
+    # DX_1[inactive_idx] = 0.0
+
+    return DX_0, DX_1, active
 
 def func_DX_ICECitr_batch(M_0, M_1, X_0, X_1):
     """
@@ -105,7 +125,6 @@ def func_DX_ICECitr_batch(M_0, M_1, X_0, X_1):
     # Compute Edge_update
     d_X0 = M_1 @ M_param @ (X_1 - X_0)  # [batch_size, 3, 1]
     d_X1 = M_0 @ M_param @ (X_0 - X_1)  # [batch_size, 3, 1]
-    print('updated edge in function',X_1 - X_0)
 
     return d_X0, d_X1
 

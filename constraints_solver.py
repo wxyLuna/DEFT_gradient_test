@@ -271,6 +271,7 @@ class constraints_enforcement(nn.Module):
 
             # denominator = L^2 + updated_edges^2
             denominator = nominal_length_square[:, i] + (updated_edges * updated_edges).sum(dim=1)
+
             # l ~ measure of inextensibility mismatch
             l = torch.zeros_like(nominal_length_square[:, i])
             mask = zero_mask_num[:, i].bool()
@@ -278,15 +279,21 @@ class constraints_enforcement(nn.Module):
             # l = 1 - 2L^2 / (L^2 + |edge|^2)
             l[mask] = 1 - 2 * nominal_length_square[mask, i] / denominator[mask]
 
+            # print('nominal_length**2',nominal_length_square[:, i])
+            # print('edge **2', (updated_edges * updated_edges).sum(dim=1))
+            # print('l',l)
+
             # If all edges are within tolerance, skip
             are_all_close_to_zero = torch.all(torch.abs(l) < self.tolerance)
             if are_all_close_to_zero:
+
                 continue
 
             # l_cat used for scaling -> shape (batch,) -> repeated
             l_cat = (l.unsqueeze(-1).repeat(1, 2).view(-1) / scale[:, i])
             # l_scale -> (batch,) -> expanded for each dimension
             l_scale = l_cat.unsqueeze(-1).unsqueeze(-1) * mass_scale[:, i]
+
 
 
             #store pre_updated current_vertices for gradient computation
@@ -308,7 +315,7 @@ class constraints_enforcement(nn.Module):
 
             # this calculation is only for checking the ICE equation result vs. the ICE function's output
             # turn on the switch if needed, default is off
-            calculate_DX = False
+            calculate_DX = True
             if calculate_DX:
                 #ICE function output for DX
                 delta_x = (l_scale @ updated_edges.unsqueeze(dim=1)
@@ -318,19 +325,29 @@ class constraints_enforcement(nn.Module):
                 dx_0 = delta_x[:, 0, :].unsqueeze(-1)
                 dx_1 = delta_x[:, 1, :].unsqueeze(-1)
                 #ICE equation output for DX
-                DX_0, DX_1 = func_DX_ICitr_batch(
+
+
+                DX_0, DX_1, active = func_DX_ICitr_batch(
                     DLO_mass[:, i], DLO_mass[:, i + 1],
                     current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
-                    undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
+                    undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask, i
                 )
+
+
+                dx_0_np = dx_0.detach().numpy()
+                dx_1_np = dx_1.detach().numpy()
+
 
                 DX_0 /= DX_0_scale.view(-1, 1, 1)
                 DX_1 /= DX_1_scale.view(-1, 1, 1)
-                print('DX0 ratio',DX_0/dx_0)
-                print('DX1 ratio',DX_1/dx_1)
+                DX0_ratio = DX_0/dx_0_np
+                DX1_ratio = DX_1/dx_1_np
+                # print('DX0 ratio',DX0_ratio)
+
 
             # ___Update the gradient for the current vertices___
             # Gradient of the inextensibility constraint w.r.t. the positions of the two vertices
+
             grad_DX_X_step = gradients.grad_DX_X_ICitr_batch(
                 DLO_mass[:, i], DLO_mass[:, i + 1],
                 current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
@@ -441,9 +458,9 @@ class constraints_enforcement(nn.Module):
         batch = grad_per_ICEC.batch
         for i, child_idx in zip(coupling_index, selected_children_index):
             pm = parent_mass[:, i]  # (batch, 3, 3)
-            cm = children_mass[(child_idx-1)*batch:(child_idx*batch), 0]  # (batch, 3, 3)
+            cm = children_mass[child_idx-1::2][:,0,:,:] # (batch, 3, 3)
             pv = parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3, 1)  # (batch, 3, 1)
-            cv = child_vertices_copy[(child_idx-1)*batch:(child_idx*batch), 0, :].reshape(batch, 3, 1)  # (batch, 3, 1)
+            cv = child_vertices_copy[child_idx-1::2][:,0,:].unsqueeze(-1)  # (batch, 3, 1)
 
             # this calculation is only for checking the ICEC equation result vs. the ICEC function's output
             # turn on the switch if needed, default is off
@@ -451,9 +468,8 @@ class constraints_enforcement(nn.Module):
             if calculate_DX:
                 # ICE function output for DX
 
-                dx_0 = (l1 @ updated_edges.unsqueeze(dim=-1))[child_idx- 1:child_idx,:,:]
-                dx_1 = (l2 @ updated_edges.unsqueeze(dim=-1))[child_idx- 1:child_idx,:,:]
-                print('l1',l1)
+                dx_0 = (l1 @ updated_edges.unsqueeze(dim=-1))[child_idx-1::2]
+                dx_1 = (l2 @ updated_edges.unsqueeze(dim=-1))[child_idx-1::2]
                 # ICE equation output for DX
                 dx_0, dx_1 = dx_0.detach().cpu().numpy(),dx_1.detach().cpu().numpy()
                 DX_0, DX_1 = func_DX_ICECitr_batch(pm, cm, pv, cv)
@@ -466,16 +482,32 @@ class constraints_enforcement(nn.Module):
             grad_X_pc_pc_step, grad_X_pc_cc_step,grad_X_cc_pc_step,grad_X_cc_cc_step, grad_DX_X_step = gradients.grad_DX_X_ICEC_batch(pm, cm)  # (batch, 6, 6)
             grad_M_pc_pc_step, grad_M_pc_cc_step, grad_M_cc_pc_step, grad_M_cc_cc_step, grad_DX_M_step = gradients.grad_DX_M_ICEC_batch(pm, cm, pv, cv)
 
-            p_slice = slice(3 * (selected_parent_index * grad_per_ICEC.num_vertices + i),
-                            3 * (selected_parent_index * grad_per_ICEC.num_vertices + i) + 3)
-            p_mcol = selected_parent_index * grad_per_ICEC.num_vertices + i
-            c_slice = slice(3 * (child_idx * grad_per_ICEC.num_vertices + 0),
-                            3 * (child_idx * grad_per_ICEC.num_vertices + 0) + 3)
-            c_mcol = child_idx * grad_per_ICEC.num_vertices + 0
+
+            # p_slice = slice(3 * (selected_parent_index * grad_per_ICEC.num_vertices + i),
+            #                 3 * (selected_parent_index * grad_per_ICEC.num_vertices + i) + 3)
+            # p_mcol = selected_parent_index * grad_per_ICEC.num_vertices + i
+            # c_slice = slice(3 * (child_idx * grad_per_ICEC.num_vertices + 0),
+            #                 3 * (child_idx * grad_per_ICEC.num_vertices + 0) + 3)
+            # c_mcol = child_idx * grad_per_ICEC.num_vertices + 0
+            grad_X_pc_interest_list = []
+            grad_X_cc_interest_list = []
+
+            for b in range(batch):
+                p_index = selected_parent_index[b].item()
+
+                p_start = 3 * (i)
+                p_end = p_start + 3
+                c_start = 3 * (child_idx * grad_per_ICEC.num_vertices + 0)
+                c_end = c_start + 3
+
+                grad_X_pc_interest_list.append(grad_per_ICEC.grad_DX_X[b, p_start:p_end, :].copy())
+                grad_X_cc_interest_list.append(grad_per_ICEC.grad_DX_X[b, c_start:c_end, :].copy())
+
+            # Stack into tensor shape (B, 3, N)
+            grad_X_pc_interest = np.stack(grad_X_pc_interest_list, axis=0)
+            grad_X_cc_interest = np.stack(grad_X_cc_interest_list, axis=0)
 
             # ___Update the gradient for the current vertices___
-            grad_X_pc_interest = grad_per_ICEC.grad_DX_X[:, p_slice, :].copy()
-            grad_X_cc_interest = grad_per_ICEC.grad_DX_X[:, c_slice, :].copy()
             grad_DX_X_interest = np.concatenate((grad_X_pc_interest, grad_X_cc_interest), axis=1)
 
             grad_chain_passed_DX_X = grad_DX_X_step @ grad_DX_X_interest
@@ -490,12 +522,34 @@ class constraints_enforcement(nn.Module):
 
             grad_step_DX_X = grad_DX_X_step_expanded + grad_DX_X_interest + grad_chain_passed_DX_X
 
-            grad_per_ICEC.grad_DX_X[:, p_slice, :] = grad_step_DX_X[:, :3, :]
-            grad_per_ICEC.grad_DX_X[:, c_slice, :] = grad_step_DX_X[:, 3:, :]
+            for b in range(batch):
+                p_index = selected_parent_index[b].item()
+
+                p_start = 3 * (i)
+                p_end = p_start + 3
+                c_start = 3 * (child_idx * grad_per_ICEC.num_vertices + 0)
+                c_end = c_start + 3
+                grad_per_ICEC.grad_DX_X[:, p_start:p_end, :] = grad_step_DX_X[:, :3, :]
+                grad_per_ICEC.grad_DX_X[:, c_start:c_end, :] = grad_step_DX_X[:, 3:, :]
 
             # ___Update the gradient for the mass matrices___
-            grad_M_pc_interest = grad_per_ICEC.grad_DX_M[:, p_slice, :].copy()
-            grad_M_cc_interest = grad_per_ICEC.grad_DX_M[:, c_slice, :].copy()
+            grad_M_pc_interest_list = []
+            grad_M_cc_interest_list = []
+            for b in range(batch):
+                p_index = selected_parent_index[b].item()
+
+                p_start = 3 * (i)
+                p_end = p_start + 3
+                c_start = 3 * (child_idx * grad_per_ICEC.num_vertices + 0)
+                c_end = c_start + 3
+
+                grad_M_pc_interest_list.append(grad_per_ICEC.grad_DX_M[b, p_start:p_end, :].copy())
+                grad_M_cc_interest_list.append(grad_per_ICEC.grad_DX_M[b, c_start:c_end, :].copy())
+
+            # Stack into tensor shape (B, 3, N)
+            grad_M_pc_interest = np.stack(grad_M_pc_interest_list, axis=0)
+            grad_M_cc_interest = np.stack(grad_M_cc_interest_list, axis=0)
+
             grad_DX_M_interest = np.concatenate((grad_M_pc_interest, grad_M_cc_interest), axis=1)
 
             grad_chain_passed_DX_M = grad_DX_X_step @ grad_DX_M_interest
@@ -509,9 +563,15 @@ class constraints_enforcement(nn.Module):
             ), axis=2)
 
             grad_step_DX_M = grad_DX_M_step_expanded + grad_DX_M_interest + grad_chain_passed_DX_M
-            
-            grad_per_ICEC.grad_DX_M[:, p_slice, :] = grad_step_DX_M[:, :3, :]
-            grad_per_ICEC.grad_DX_M[:, c_slice, :] = grad_step_DX_M[:, 3:, :]
+            for b in range(batch):
+                p_index = selected_parent_index[b].item()
+
+                p_start = 3 * (i)
+                p_end = p_start + 3
+                c_start = 3 * (child_idx * grad_per_ICEC.num_vertices + 0)
+                c_end = c_start + 3
+                grad_per_ICEC.grad_DX_M[:, p_start:p_end, :] = grad_step_DX_M[:, :3, :]
+                grad_per_ICEC.grad_DX_M[:, c_start:c_end, :] = grad_step_DX_M[:, 3:, :]
 
         return b_DLOs_vertices, grad_per_ICEC
 

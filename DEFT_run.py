@@ -315,6 +315,11 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
     # The first sample in the batch of undeformed vertices (reshape to [n_branch, n_vert, 3])
     b_undeformed_vert = b_DLOs_vertices_undeform_transform[0].view(n_branch, -1, 3)
 
+    # rdm_scale = 0.03
+    #
+    # b_undeformed_vert, b_DLO_mass = randomize_input(n_branch,n_parent_vertices,rdm_scale,b_undeformed_vert, b_DLO_mass)
+
+
     # Initialize index selection for parent MOI indices, etc.
     index_selection1, index_selection2, parent_MOI_index1, parent_MOI_index2 = index_init(
         rigid_body_coupling_index,
@@ -530,7 +535,35 @@ def get_data(BDLO_type, train_time_horizon, total_time, n_parent_vertices, n_chi
     BDLOs_target_vertices = torch.tensor(BDLOs_target_vertices_np, dtype=torch.float64).repeat(batch_size, 1, 1, 1, 1)
 
     return BDLOs_previous_vertices, BDLOs_vertices, BDLOs_target_vertices
+def randomize_input(n_branch, n_vert, rdm_scale, b_undeformed_vert, b_DLO_mass):
+    '''
+    for randomizing input
+    :param batch:
+    :param n_branch:
+    :param n_vert:
+    :param rdm_scale:
+    :param b_undeformed_vert:
+    :param b_DLO_mass:
+    :return:
+    '''
 
+
+    # reset random seed each time -> ensures new randomness
+    torch.seed()
+    zero_vertices_mask = (b_undeformed_vert != 0).to(torch.uint8)
+    rdm_vec = torch.rand(n_branch, n_vert, 3, device=device)
+    print('rdm_vec',rdm_vec)
+    rdm_vec = rdm_vec / rdm_vec.norm(dim=-1, keepdim=True) * rdm_scale * zero_vertices_mask
+    b_undeformed_vert = b_undeformed_vert + rdm_vec
+    rand_mass = torch.rand(n_branch, n_vert, device=device)
+    row_mask = zero_vertices_mask[..., 0]
+    rand_mass =row_mask * rand_mass
+    print('random_mass',rand_mass)
+
+    b_DLO_mass = b_DLO_mass+rand_mass
+
+
+    return b_undeformed_vert, b_DLO_mass
 
 if __name__ == "__main__":
     # Setting up a command-line interface for hyperparameters and options
@@ -558,7 +591,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=100)
+    parser.add_argument("--train_time_horizon", type=int, default=10)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
@@ -590,6 +623,8 @@ if __name__ == "__main__":
     device = "cpu"
 
     args = parser.parse_args()
+
+
 
     # Call the training function with the user-specified arguments
     train(

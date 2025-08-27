@@ -122,7 +122,7 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
 
     # ---- safe inverse of (M0+M1) ----
     sumM    = M0v + M1v                            # (b,3,3)
-    M_param = np.linalg.pinv(sumM, rcond=1e-12)    # (b,3,3) robust
+    M_param = np.linalg.inv(sumM)    # (b,3,3) robust
     # outer product Edge*Edge^T: (b,3,3)
     E_outer = np.einsum('bik,bjk->bij', Edge, Edge)
 
@@ -273,7 +273,7 @@ def grad_DX_M_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
 
     # safe inverse of (M0+M1)
     sumM = M0v + M1v                                        # (b,3,3)
-    Mparam = np.linalg.pinv(sumM, rcond=1e-12)              # (b,3,3)
+    Mparam = np.linalg.inv(sumM)              # (b,3,3)
     MM = Mparam @ Mparam
 
     I = np.broadcast_to(np.eye(3), Mparam.shape)            # (b,3,3)
