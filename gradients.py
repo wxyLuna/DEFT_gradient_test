@@ -142,7 +142,9 @@ def grad_DX_X_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask):
 
     # pack (b,6,6)
     top = np.concatenate([grad_00, grad_01], axis=2)  # (b,3,6)
+
     bot = np.concatenate([grad_10, grad_11], axis=2)  # (b,3,6)
+
     packed = np.concatenate([top, bot], axis=1)       # (b,6,6)
 
     grad_DX_X[idx] = packed

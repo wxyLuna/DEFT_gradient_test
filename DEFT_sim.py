@@ -26,6 +26,7 @@ import numpy as np
 sys.path.append(module_dir)
 from GNN_tree import BatchedGNNModel
 import gradients
+import glob
 
 import time
 
@@ -64,7 +65,8 @@ class DEFT_sim(nn.Module):
         bend_stiffness_child2,
         twist_stiffness,
         damping,
-        learning_weight
+        learning_weight,
+        run_idx=None
     ):
         super().__init__()
         """
@@ -429,7 +431,7 @@ class DEFT_sim(nn.Module):
         self.bkgrad_neg = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
         self.bkgrad_pos = gradients.BackwardGradientIC(self.batch, n_branch, n_vert)
         self.b_undeformed_vert = b_undeformed_vert.clone().unsqueeze(0).repeat(batch, 1, 1, 1).reshape(batch * n_branch, n_vert, 3)
-
+        self.run_idx = run_idx
 
     def Rod_Init(self, batch, init_direction, m_restEdgeL, clamped_index, inference_1_batch):
         """
@@ -815,8 +817,9 @@ class DEFT_sim(nn.Module):
         child1_theta_clamp,
         child2_theta_clamp,
         inference_1_batch,
+        run_idx,
         vis_type,
-        vis=False,
+        vis=False
     ):
         """
         Perform iterative simulation for 'time_horizon' steps, updating positions and velocities at each step.
@@ -1239,7 +1242,11 @@ class DEFT_sim(nn.Module):
                     self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                     self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
-                self.numerical_gradient_checking(constraint_loop, self.bkgrad, b_DLOs_vertices_input)
+                ratio, absolute_error, relative_error = self.numerical_gradient_checking(constraint_loop, self.bkgrad, b_DLOs_vertices_input)
+
+                save_dir = f"./gradient_check/run_{run_idx}"
+
+                # self.error_log(ith, ratio, relative_error, absolute_error, save_dir, mode="save")
 
 
 
@@ -1365,9 +1372,13 @@ class DEFT_sim(nn.Module):
         delta_posisiton_neg = b_DLOs_vertices_neg - (b_DLOs_vertices_input.clone() - d_positions_input)
         d_delta_positions_ICE = (delta_posisiton_pos - delta_posisiton_neg) / 2
         numerical_d_delta_positions = d_delta_positions_ICE.detach().cpu().numpy()
-        # print('numerical_d_delta_positions', numerical_d_delta_positions)
-        # print('analytical_d_delta_positions', analytical_d_delta_positions)
+        absolute_error = analytical_d_delta_positions - numerical_d_delta_positions
+        relative_error = (analytical_d_delta_positions-numerical_d_delta_positions)/numerical_d_delta_positions
         print('analytical vs numerical ratio', numerical_d_delta_positions / analytical_d_delta_positions)
+        #
+        # print('numerical',numerical_d_delta_positions)
+        # print('analytical',analytical_d_delta_positions)
+        return  numerical_d_delta_positions / analytical_d_delta_positions,absolute_error,relative_error
 
     def set_perturbation(self, undeformed_vert, n_edge, mass_matrix, selected_parent_index, selected_children_index,
                          rigid_body_coupling_index, parent_mass, children_mass, eps_mass, eps_position):
@@ -1481,3 +1492,25 @@ class DEFT_sim(nn.Module):
             )
 
         return positions
+
+    def error_log(self, ith, ratio, relative_error, absolute_error, save_dir, mode="save"):
+        '''
+        Save and later average the errors for reporting.
+        '''
+        if mode == "save":
+            os.makedirs(save_dir, exist_ok=True)
+
+            # Save the mean errors for the last time step
+            if not hasattr(self, 'last_step_errors'):
+                self.last_step_errors = {'relative_error': [], 'absolute_error': [], 'ratio': []}
+
+            self.last_step_errors['relative_error'].append(relative_error)
+            self.last_step_errors['absolute_error'].append(absolute_error)
+            self.last_step_errors['ratio'].append(ratio)
+
+            np.savez(os.path.join(save_dir, f"last_step_error_log_timestep{ith}.npz"),
+                     relative_error=np.array(self.last_step_errors['relative_error']),
+                     absolute_error=np.array(self.last_step_errors['absolute_error']),
+                     ratio=np.array(self.last_step_errors['ratio']))
+
+            return

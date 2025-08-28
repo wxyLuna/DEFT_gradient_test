@@ -16,7 +16,7 @@ import pandas as pd
 
 
 def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, inference_vis, inference_1_batch,
-          residual_learning, clamp_type, load_model):
+          residual_learning, clamp_type, load_model, run_idx):
     # The total_time parameter is the maximum timesteps of the loaded data
     # The train_time_horizon is how many timesteps to unroll the simulation during training
     # The function trains or partially fine-tunes a DEFT model for a specific branched BDLO type
@@ -315,10 +315,9 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
     # The first sample in the batch of undeformed vertices (reshape to [n_branch, n_vert, 3])
     b_undeformed_vert = b_DLOs_vertices_undeform_transform[0].view(n_branch, -1, 3)
 
-    # rdm_scale = 0.03
+    # rdm_scale = 0.01
     #
     # b_undeformed_vert, b_DLO_mass = randomize_input(n_branch,n_parent_vertices,rdm_scale,b_undeformed_vert, b_DLO_mass)
-
 
     # Initialize index selection for parent MOI indices, etc.
     index_selection1, index_selection2, parent_MOI_index1, parent_MOI_index2 = index_init(
@@ -503,6 +502,7 @@ def train(train_batch, BDLO_type, total_time, train_time_horizon, undeform_vis, 
             child1_theta_clamp,
             child2_theta_clamp,
             inference_1_batch,
+            run_idx,
             vis_type=vis_type,
             vis=vis
         )
@@ -591,7 +591,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=10)
+    parser.add_argument("--train_time_horizon", type=int, default=100)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
@@ -603,7 +603,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual_learning", type=bool, default=False)
 
     # Training batch size
-    parser.add_argument("--train_batch", type=int, default=1)
+    parser.add_argument("--train_batch", type=int, default=10)
 
     # Whether to visualize inference results (for debugging)
     parser.add_argument("--inference_vis", type=bool, default=False)
@@ -624,18 +624,21 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    for run_idx in range(1):
+        print(f"\n=== Run {run_idx + 1}/10 ===")
 
 
-    # Call the training function with the user-specified arguments
-    train(
-        train_batch=args.train_batch,
-        BDLO_type=args.BDLO_type,
-        total_time=args.total_time,
-        train_time_horizon=args.train_time_horizon,
-        undeform_vis=args.undeform_vis,
-        inference_vis=args.inference_vis,
-        inference_1_batch=args.inference_1_batch,
-        residual_learning=args.residual_learning,
-        clamp_type=args.clamp_type,
-        load_model=args.load_model
-    )
+        # Call the training function with the user-specified arguments
+        train(
+            train_batch=args.train_batch,
+            BDLO_type=args.BDLO_type,
+            total_time=args.total_time,
+            train_time_horizon=args.train_time_horizon,
+            undeform_vis=args.undeform_vis,
+            inference_vis=args.inference_vis,
+            inference_1_batch=args.inference_1_batch,
+            residual_learning=args.residual_learning,
+            clamp_type=args.clamp_type,
+            load_model=args.load_model,
+            run_idx=run_idx
+        )

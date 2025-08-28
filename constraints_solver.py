@@ -267,6 +267,7 @@ class constraints_enforcement(nn.Module):
         # Loop over each edge
         for i in range(current_vertices.size()[1] - 1):
             # Extract the 'edge' vector, masked by zero_mask_num
+
             updated_edges = (current_vertices[:, i + 1] - current_vertices[:, i]) * zero_mask_num[:, i].unsqueeze(-1)
 
             # denominator = L^2 + updated_edges^2
@@ -315,7 +316,7 @@ class constraints_enforcement(nn.Module):
 
             # this calculation is only for checking the ICE equation result vs. the ICE function's output
             # turn on the switch if needed, default is off
-            calculate_DX = True
+            calculate_DX = False
             if calculate_DX:
                 #ICE function output for DX
                 delta_x = (l_scale @ updated_edges.unsqueeze(dim=1)
@@ -328,9 +329,9 @@ class constraints_enforcement(nn.Module):
 
 
                 DX_0, DX_1, active = func_DX_ICitr_batch(
-                    DLO_mass[:, i], DLO_mass[:, i + 1],
+                    DLO_mass[:, i, :, :], DLO_mass[:, i + 1, :, :],
                     current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
-                    undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask, i
+                    undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask, i,  n_branch
                 )
 
 
@@ -342,7 +343,7 @@ class constraints_enforcement(nn.Module):
                 DX_1 /= DX_1_scale.view(-1, 1, 1)
                 DX0_ratio = DX_0/dx_0_np
                 DX1_ratio = DX_1/dx_1_np
-                # print('DX0 ratio',DX0_ratio)
+                print(f'DX0 ratio at edge {i}',DX0_ratio)
 
 
             # ___Update the gradient for the current vertices___
@@ -353,21 +354,28 @@ class constraints_enforcement(nn.Module):
                 current_vertices_copy[:, i, :][:, :, None], current_vertices_copy[:, i + 1, :][:, :, None],
                 undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
             )
+            # print(f'at edge {i}, grad_DX_X',grad_DX_X_step)
+            # print('grad_DX_X_step[:, 0:3, :]',grad_DX_X_step[:, 0:3, :])
+            # print('grad_DX_X_step[:, 3:6, :]',grad_DX_X_step[:, 3:6, :])
+
             grad_DX_X_step[:, 0:3, :] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 6)
             grad_DX_X_step[:, 3:6, :] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 6)
-            grad_DX_X_step = grad_DX_X_step.reshape(n_branch, batch, 6, 6)
+            grad_DX_X_step = grad_DX_X_step.reshape(batch, n_branch, 6, 6)
+
+
 
             for idx_branch in range(n_branch):
-                grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:, 
+                grad_interest_DX_X = grad_per_ICitr.grad_DX_X[:,
                                       idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * i:
                                       idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * (i + 2),
                                       :].copy()
-                
-                grad_chain_passed_DX_X = grad_DX_X_step[idx_branch] @ grad_interest_DX_X
+
+                grad_chain_passed_DX_X = grad_DX_X_step[:,idx_branch,:,:] @ grad_interest_DX_X
+
 
                 grad_DX_X_step_expanded = np.concatenate((
                     np.zeros((batch, 6, 3 * (idx_branch * grad_per_ICitr.num_vertices + i))),
-                    grad_DX_X_step[idx_branch],
+                    grad_DX_X_step[:,idx_branch,:,:],
                     np.zeros((batch, 6, 3 * (3 * grad_per_ICitr.num_vertices - i - 2 - idx_branch * grad_per_ICitr.num_vertices)))
                 ), axis=2)
 
@@ -383,9 +391,11 @@ class constraints_enforcement(nn.Module):
                 undeformed_vertices[:, i, :][:, :, None], undeformed_vertices[:, i + 1, :][:, :, None], mask
 
             )
+
+
             grad_DX_M_step[:, 0:3, :] /= DX_0_scale.view(-1, 1, 1).repeat(1, 3, 2)
             grad_DX_M_step[:, 3:6, :] /= DX_1_scale.view(-1, 1, 1).repeat(1, 3, 2)
-            grad_DX_M_step = grad_DX_M_step.reshape(n_branch, batch, 6, 2)
+            grad_DX_M_step = grad_DX_M_step.reshape(batch, n_branch, 6, 2)
 
             for idx_branch in range(n_branch):
                 grad_interest_DX_M = grad_per_ICitr.grad_DX_M[:, 
@@ -393,11 +403,11 @@ class constraints_enforcement(nn.Module):
                                       idx_branch * 3 * grad_per_ICitr.num_vertices + 3 * (i + 2),
                                       :].copy()
 
-                grad_chain_passed_DX_M = grad_DX_X_step[idx_branch] @ grad_interest_DX_M
+                grad_chain_passed_DX_M = grad_DX_X_step[:,idx_branch,:,:] @ grad_interest_DX_M
 
                 grad_M_X_step_expanded = np.concatenate((
                     np.zeros((batch, 6, idx_branch * grad_per_ICitr.num_vertices + i)),
-                    grad_DX_M_step[idx_branch],
+                    grad_DX_M_step[:,idx_branch,:,:],
                     np.zeros((batch, 6, 3 * grad_per_ICitr.num_vertices - i - 2 - idx_branch * grad_per_ICitr.num_vertices))
                 ), axis=2)
 

@@ -5,7 +5,7 @@ import numpy as np
 
 import numpy as np
 
-def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask,  i):
+def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask,  i, n_branch):
     """
     Batch version of Inextensibility Constraint Iterative Function (robust & masked)
 
@@ -57,6 +57,8 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask,  i):
 
 
     idx = np.where(active)[0]
+    print(f'valid vertice idx at edge {i}',idx)
+
     M0v, M1v = M_0[idx], M_1[idx]
     X0v, X1v = X_0[idx], X_1[idx]
     X0iv, X1iv = X_0_init[idx], X_1_init[idx]
@@ -74,26 +76,14 @@ def func_DX_ICitr_batch(M_0, M_1, X_0, X_1, X_0_init, X_1_init, mask,  i):
     L2 = np.sum(Edge**2, axis=1, keepdims=True)         # (B,1,1)
     L0_2 = np.sum(Edge_init**2, axis=1, keepdims=True)  # (B,1,1)
     denom = L2 + L0_2
-    # denom = np.where(denom < eps, eps, denom)           # prevent division by zero
-    # print('L0_2', L0_2)
-    # print('L2',L2)
 
     # Lambda
     lambda_param = (L2 - L0_2) / denom                  # (B,1,1)
 
 
-
-
-
-
-    DX0_manual = np.einsum("bij,bjk,bkl->bil", M1v, M_param, Edge) * lambda_param
-
     DX_0[idx] = np.einsum('bij,bjk,bkl->bil', M1v, M_param, Edge) * lambda_param  # (B,3,1)
+
     DX_1[idx] = -np.einsum('bij,bjk,bkl->bil', M0v, M_param, Edge) * lambda_param  # (B,3,1)
- # Ensure inactive edges return zero
-    # inactive_idx = np.where(~active.reshape(B))[0]
-    # DX_0[inactive_idx] = 0.0
-    # DX_1[inactive_idx] = 0.0
 
     return DX_0, DX_1, active
 
