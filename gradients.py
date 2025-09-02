@@ -473,7 +473,7 @@ class RCEPC_gradient:
         hat_r[:, 2, 0] = -r[:, 1]
         hat_r[:, 2, 1] = r[:, 0]
         return hat_r
-    
+
     def left_jacobian_so3(self, r):
         """
         Compute the left Jacobian of SO(3) for a batch of rotation vectors.
@@ -497,9 +497,9 @@ class RCEPC_gradient:
         a = np.where(small, 0.5 - theta**2 / 24 + theta**4 / 720, a)
         b = np.where(small, 1/6 - theta**2 / 120 + theta**4 / 5040, b)
 
-        J = I - a * hat_r + b * (hat_r @ hat_r)
+        J = I - a[...,None] * hat_r + b[...,None] * (hat_r @ hat_r)
         return J
-    
+
     def ruv_jacobian(self, u, v, eps=1e-8):
         """
         Compute the Jacobian of the rotation vector with respect to the input vectors u and v.
@@ -537,13 +537,14 @@ class RCEPC_gradient:
             n = a_sel / s_sel
 
             I = np.eye(3)[None, :, :]
-            A = (theta/s_sel)[:,None,None] * I + (c_sel - theta/s_sel)[:, :, None] * np.einsum('bi,bj->bij', n, n)
+
+            A = (theta/s_sel)[:,None] * I + (c_sel - theta/s_sel)[:, :, None] * np.einsum('bi,bj->bij', n, n)
 
             Su[idx] = A @ (-self.hat(v_sel)) - s_sel[:, :, None] * np.einsum('bi,bj->bij', n, v_sel)
             Sv[idx] = A @ self.hat(u_sel) - s_sel[:, :, None] * np.einsum('bi,bj->bij', n, u_sel)
 
         return Su, Sv
-    
+
     def gradient_DX_MOI(self, Xpc0, Xpc1, Xcc0, Xcc1, DRpc, DRcc, Drpc, Drcc, Dr, MOIpc, MOIcc):
         """
         Compute the gradient wrt moments of inertia
@@ -560,14 +561,14 @@ class RCEPC_gradient:
             MOIpc: moments of inertia for parent rods, [batch, 3, 3].
             MOIcc: moments of inertia for child rods, [batch, 3, 3].
         """
-
+        batch_size = Xpc0.shape[0]
         Epc = Xpc1 - Xpc0  # parent edge vector, [batch, 3]
         Ecc = Xcc1 - Xcc0  # child edge vector, [batch, 3]
-        
-        J_00 = - DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ np.diag(Dr) @ MOIcc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{pc+1} / MOI_{pc}
-        J_01 = DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ np.diag(Dr) @ MOIpc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{pc+1} / MOI_{cc}
-        J_10 = - DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ np.diag(Dr) @ MOIcc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{cc+1} / MOI_{pc}
-        J_11 = DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ np.diag(Dr) @ MOIpc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{cc+1} / MOI_{cc}
+        I = np.eye(3)[None, :, :].repeat(batch_size, axis=0)
+        J_00 = - DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ (np.diag(Dr)*I) @ MOIcc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{pc+1} / MOI_{pc}
+        J_01 = DRpc @ self.hat(Epc) @ self.left_jacobian_so3(Drpc) @ (np.diag(Dr)*I) @ MOIpc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{pc+1} / MOI_{cc}
+        J_10 = - DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ (np.diag(Dr)*I) @ MOIcc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{cc+1} / MOI_{pc}
+        J_11 = DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ (np.diag(Dr)*I) @ MOIpc @ np.linalg.inv(MOIpc + MOIcc) @ np.linalg.inv(MOIpc + MOIcc) # [batch, 3, 3], DX_{cc+1} / MOI_{cc}
 
         J = np.zeros((Xpc0.shape[0], 6, 6), dtype=np.float64)
         J[:, :3, :3] = J_00
@@ -615,8 +616,9 @@ class RCEPC_gradient:
         _, Sv_pc = self.ruv_jacobian(epc_init, epc)  # Jacobian for parent edge
         _, Sv_cc = self.ruv_jacobian(ecc_init, ecc)  # Jacobian for child edge
 
-        j_norm_pc = ((I - np.einsum('bi,bj->bij', epc, epc)) / np.linalg.norm(Epc, axis=-1, keepdims=True))
-        j_norm_cc = ((I - np.einsum('bi,bj->bij', ecc, ecc)) / np.linalg.norm(Ecc, axis=-1, keepdims=True))
+        I = np.eye(3)[None, :, :].repeat(batch_size, axis=0)
+        j_norm_pc = ((I - np.einsum('bi,bj->bij', epc, epc)) / np.linalg.norm(Epc, axis=-1, keepdims=True)[...,None])
+        j_norm_cc = ((I - np.einsum('bi,bj->bij', ecc, ecc)) / np.linalg.norm(Ecc, axis=-1, keepdims=True)[...,None])
 
         MOIs0 = (-MOIcc) @ np.linalg.inv(MOIpc + MOIcc)
         MOIs1 = MOIpc @ np.linalg.inv(MOIpc + MOIcc)

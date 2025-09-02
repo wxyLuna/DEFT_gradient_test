@@ -535,6 +535,7 @@ def get_data(BDLO_type, train_time_horizon, total_time, n_parent_vertices, n_chi
     BDLOs_target_vertices = torch.tensor(BDLOs_target_vertices_np, dtype=torch.float64).repeat(batch_size, 1, 1, 1, 1)
 
     return BDLOs_previous_vertices, BDLOs_vertices, BDLOs_target_vertices
+
 def randomize_input(n_branch, n_vert, rdm_scale, b_undeformed_vert, b_DLO_mass):
     '''
     for randomizing input
@@ -591,7 +592,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=100)
+    parser.add_argument("--train_time_horizon", type=int, default=10)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
@@ -603,7 +604,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual_learning", type=bool, default=False)
 
     # Training batch size
-    parser.add_argument("--train_batch", type=int, default=10)
+    parser.add_argument("--train_batch", type=int, default=5)
 
     # Whether to visualize inference results (for debugging)
     parser.add_argument("--inference_vis", type=bool, default=False)

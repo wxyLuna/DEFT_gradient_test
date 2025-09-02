@@ -603,7 +603,7 @@ class constraints_enforcement(nn.Module):
             self,
             parent_vertices, parent_orientations, previous_parent_vertices,
             children_vertices, children_orientations, previous_children_vertices,
-            parent_MOIs, children_MOIs, index_selection, parent_MOI_index, momentum_scale_previous
+            parent_MOIs, children_MOIs, index_selection, selected_children_index, parent_MOI_index, momentum_scale_previous, n_vert
     ):
         """
         Enforces rotational constraints (continuity) between parent and child rods
@@ -619,12 +619,24 @@ class constraints_enforcement(nn.Module):
             parent_MOIs (torch.Tensor): Parent moments of inertia (not fully used here).
             children_MOIs (torch.Tensor): Child moments of inertia.
             index_selection (torch.Tensor): Indices of the parent rods to apply constraints to.
+            selected_children_index (list): Indices of the child rods in the larger scene.
             parent_MOI_index (torch.Tensor): Indices for selecting from parent_MOIs.
             momentum_scale_previous (torch.Tensor): Scale factors for rotational momentum-based correction.
 
         Returns:
             Tuple of updated parent_vertices, parent_orientations, children_vertices, children_orientations.
         """
+        parent_vertices_copy = parent_vertices.clone().detach().numpy()
+        children_vertices_copy = children_vertices.clone().detach().numpy()
+        parent_orientations_copy = parent_orientations.clone().detach().numpy()
+        children_orientations_copy = children_orientations.clone()
+        previous_parent_vertices_copy = previous_parent_vertices.clone().detach().numpy()
+        previous_children_vertices_copy = previous_children_vertices.clone().detach().numpy()
+
+        n_child_branch = children_vertices.shape[1]
+        RCEPC_gradient = gradients.RCEPC_gradient()
+
+
         batch = parent_vertices.size()[0]
         n_children = len(index_selection)
 
@@ -650,6 +662,7 @@ class constraints_enforcement(nn.Module):
         quaternion = pytorch3d.transforms.matrix_to_quaternion(
             self.rotation_matrix_from_vectors_lowerdim(previous_edges, current_edges)
         )
+
 
         # 3) Combine new rotation quaternion with existing orientation
         quaternion_magnitude = self.quaternion_magnitude(quaternion)
@@ -680,6 +693,76 @@ class constraints_enforcement(nn.Module):
         parent_vertices[:, parent_desired_order] = parent_rod_vertices
         parent_orientations[:, index_selection] = parent_rod_quaternion.view(batch, n_children, 4)
         children_vertices[:, :, 0:2] = children_rod_vertices.reshape(-1, children_vertices.size()[1], 2, 3)
+
+        # -------------------------------gradient implementation-------------------------------
+
+
+        DR = self.rotation_matrix_from_vectors_lowerdim(previous_edges, current_edges)
+        DRpc_indices = []
+        DRcc_indices = []
+
+        for b in range(batch):
+            base = b * 2 * n_child_branch
+            for i in range(n_child_branch):
+                DRpc_indices.append(base + i)
+                DRcc_indices.append(base + n_child_branch + i)
+        DRpc = DR[DRpc_indices].reshape(batch,n_child_branch,3,3)
+
+        DRcc = DR[DRcc_indices].reshape(batch,n_child_branch,3,3)
+
+
+        pos_map = {int(idx.item()): pos for pos, idx in enumerate(index_selection)}
+        children_vertices_copy = children_vertices_copy.reshape(-1, n_vert,3)
+        previous_children_vertices_copy = previous_children_vertices_copy.reshape(-1, n_vert,3)
+        for i, child_idx in zip(index_selection, selected_children_index):
+
+            moi_index = pos_map[int(i.item())]
+            pmoi = parent_MOIs[parent_MOI_index][moi_index].repeat(batch,1,1)  # (batch, 3, 3)
+            cmoi = children_MOIs[moi_index].repeat(batch,1,1)  # (batch, 3, 3)
+            pv_0 = parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
+            pv_1 = parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
+            cv_0 = children_vertices_copy[child_idx - 1::2][:, 0, :]# (batch, 3)
+            cv_1 = children_vertices_copy[child_idx - 1::2][:, 1, :] # (batch, 3)
+            pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
+            pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
+            cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
+            cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
+            rpc = pv_1 - pv_0
+            rcc = cv_1 - cv_0
+
+            Rcc = pytorch3d.transforms.quaternion_to_matrix(children_orientations_copy)[:,moi_index,:,:]
+
+            DRpc_interest = DRpc[:, moi_index, :, :]
+            DRcc_interest = DRcc[:, moi_index, :, :]
+            Drpc = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DRpc_interest)
+            Drcc = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DRcc_interest)
+
+            DR_pc_cc = torch.matmul(DRpc_interest, torch.linalg.inv(DRcc_interest))
+            Dr = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DR_pc_cc)
+
+
+            Rcc = Rcc.detach().numpy()
+            DRpc_interest = DRpc_interest.detach().numpy()
+            DRcc_interest = DRcc_interest.detach().numpy()
+            Drpc = Drpc.detach().numpy()
+            Drcc = Drcc.detach().numpy()
+            Dr = Dr.detach().numpy()
+            pmoi = pmoi.detach().numpy()
+            cmoi = cmoi.detach().numpy()
+
+            #update DX/MOI, DX/X]
+
+            J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J = RCEPC_gradient.gradient_DX_X(pv_0, pv_1, cv_0, cv_1,
+                                                                                             DRpc_interest, DRcc_interest, Drpc, Drcc, Dr,
+                                                                                             pmoi, cmoi, Rcc, rpc, rcc,
+                                                                                             pv_init_0, pv_init_1,
+                                                                                             cv_init_0, cv_init_1)
+
+
+            J_00, J_01, J_10, J_11, J = RCEPC_gradient.gradient_DX_MOI(pv_0, pv_1,cv_0, cv_1,
+                                                                       DRpc_interest, DRcc_interest, Drpc, Drcc, Dr,
+                                                                       pmoi, cmoi)
+            print('reached here')
 
         return parent_vertices, parent_orientations, children_vertices, children_orientations.view(batch, n_children, 4)
 

@@ -1173,41 +1173,45 @@ class DEFT_sim(nn.Module):
                     children_vertices = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
 
                     # # Edge1
-                    # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
-                    #     self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
-                    #         parent_vertices,
-                    #         parent_rod_orientation,
-                    #         previous_parent_vertices_iteration_edge1,
-                    #         children_vertices,
-                    #         children_rod_orientation,
-                    #         previous_children_vertices_iteration_edge,
-                    #         self.parent_MOI_matrix,
-                    #         self.children_MOI_matrix,
-                    #         torch.tensor(self.rigid_body_coupling_index) - 1,
-                    #         torch.linspace(0, (children_vertices.size(1) * 2 - 2), len(self.rigid_body_coupling_index)).to(torch.int),
-                    #         self.momentum_scale_previous
-                    #     )
+                    parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
+                        self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
+                            parent_vertices,
+                            parent_rod_orientation,
+                            previous_parent_vertices_iteration_edge1,
+                            children_vertices,
+                            children_rod_orientation,
+                            previous_children_vertices_iteration_edge,
+                            self.parent_MOI_matrix,
+                            self.children_MOI_matrix,
+                            torch.tensor(self.rigid_body_coupling_index) - 1,
+                            self.selected_children_index,
+                            torch.linspace(0, (children_vertices.size(1) * 2 - 2), len(self.rigid_body_coupling_index)).to(torch.int),
+                            self.momentum_scale_previous,
+                            self.n_vert
+                        )
 
-                    # previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
-                    # previous_children_vertices_iteration_edge = children_vertices.clone()
+                    previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
+                    previous_children_vertices_iteration_edge = children_vertices.clone()
 
                     # # Edge2
-                    # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
-                    #     self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
-                    #         parent_vertices,
-                    #         parent_rod_orientation,
-                    #         previous_parent_vertices_iteration_edge2,
-                    #         children_vertices,
-                    #         children_rod_orientation,
-                    #         previous_children_vertices_iteration_edge,
-                    #         self.parent_MOI_matrix,
-                    #         self.children_MOI_matrix,
-                    #         torch.tensor(self.rigid_body_coupling_index),
-                    #         torch.linspace(1, (children_vertices.size(1) * 2 - 1), len(self.rigid_body_coupling_index)).to(torch.int),
-                    #         self.momentum_scale_next
-                    #     )
-                    # previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
-                    # previous_children_vertices_iteration_edge = children_vertices.clone()
+                    parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation = \
+                        self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
+                            parent_vertices,
+                            parent_rod_orientation,
+                            previous_parent_vertices_iteration_edge2,
+                            children_vertices,
+                            children_rod_orientation,
+                            previous_children_vertices_iteration_edge,
+                            self.parent_MOI_matrix,
+                            self.children_MOI_matrix,
+                            torch.tensor(self.rigid_body_coupling_index),
+                            self.selected_children_index,
+                            torch.linspace(1, (children_vertices.size(1) * 2 - 1), len(self.rigid_body_coupling_index)).to(torch.int),
+                            self.momentum_scale_next,
+                            self.n_vert
+                        )
+                    previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
+                    previous_children_vertices_iteration_edge = children_vertices.clone()
 
                     # Coupling constraints (parent <-> children rods)
                     children_vertices = children_vertices.view(-1, self.n_vert, 3)
