@@ -599,9 +599,9 @@ class RCEPC_gradient:
             Dr: axis-angle representation of the difference between parent and child rods, [batch, 3].
             MOIpc: moments of inertia for parent rods, [batch, 3, 3].
             MOIcc: moments of inertia for child rods, [batch, 3, 3].
-            Rcc: rotation matrix for child rods, [batch, 3, 3].
-            rpc: parent rod edge vector, [batch, 3].
-            rcc: child rod edge vector, [batch, 3].
+            Rcc: children rotation matrix diff between initial and the current's, [batch, 3, 3].
+            rpc: parent axis-angle diff between initial and the current's, [batch, 3].
+            rcc: children axis-angle diff between initial and the current's, [batch, 3].
             Xpc0_init: initial parent rod vertices at pc, [batch, 3].
             Xpc1_init: initial parent rod vertices at pc+1, [batch, 3].
             Xcc0_init: initial child rod vertices at cc, [batch, 3].
@@ -624,6 +624,15 @@ class RCEPC_gradient:
         Ecc = Xcc1 - Xcc0  # child edge vector, [batch, 3]
         Epc_init = Xpc1_init - Xpc0_init  # initial parent edge vector, [batch, 3]
         Ecc_init = Xcc1_init - Xcc0_init  # initial child edge vector, [batch, 3]
+        Epc = Epc.detach().cpu().numpy()
+        Ecc = Ecc.detach().cpu().numpy()
+        Epc_init = Epc_init.detach().cpu().numpy()
+        Ecc_init = Ecc_init.detach().cpu().numpy()
+        rpc = rpc.detach().cpu().numpy()
+        rcc = rcc.detach().cpu().numpy()
+
+
+
 
         epc = Epc / np.linalg.norm(Epc, axis=-1, keepdims=True)  # normalized parent edge vector, [batch, 3]
         ecc = Ecc / np.linalg.norm(Ecc, axis=-1, keepdims=True)  # normalized child edge vector, [batch, 3]

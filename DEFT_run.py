@@ -592,7 +592,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=10)
+    parser.add_argument("--train_time_horizon", type=int, default=3)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
@@ -604,7 +604,7 @@ if __name__ == "__main__":
     parser.add_argument("--residual_learning", type=bool, default=False)
 
     # Training batch size
-    parser.add_argument("--train_batch", type=int, default=5)
+    parser.add_argument("--train_batch", type=int, default=1)
 
     # Whether to visualize inference results (for debugging)
     parser.add_argument("--inference_vis", type=bool, default=False)

@@ -626,12 +626,12 @@ class constraints_enforcement(nn.Module):
         Returns:
             Tuple of updated parent_vertices, parent_orientations, children_vertices, children_orientations.
         """
-        parent_vertices_copy = parent_vertices.clone().detach().numpy()
-        children_vertices_copy = children_vertices.clone().detach().numpy()
+        parent_vertices_copy = parent_vertices.clone()
+        children_vertices_copy = children_vertices.clone()
         parent_orientations_copy = parent_orientations.clone().detach().numpy()
         children_orientations_copy = children_orientations.clone()
-        previous_parent_vertices_copy = previous_parent_vertices.clone().detach().numpy()
-        previous_children_vertices_copy = previous_children_vertices.clone().detach().numpy()
+        previous_parent_vertices_copy = previous_parent_vertices.clone()
+        previous_children_vertices_copy = previous_children_vertices.clone()
 
         n_child_branch = children_vertices.shape[1]
         RCEPC_gradient = gradients.RCEPC_gradient()
@@ -698,6 +698,7 @@ class constraints_enforcement(nn.Module):
         # -------------------------------gradient implementation-------------------------------
 
 
+
         DR = self.rotation_matrix_from_vectors_lowerdim(previous_edges, current_edges)
         DRpc_indices = []
         DRcc_indices = []
@@ -731,10 +732,16 @@ class constraints_enforcement(nn.Module):
             pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
             cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
-            rpc = pv_1 - pv_0
-            rcc = cv_1 - cv_0
+            epc_0 = pv_init_1 - pv_init_0
+            ecc_0 = cv_init_1 - cv_init_0
+            epc = pv_1 - pv_0
+            ecc = cv_1 - cv_0
+            Rpc = self.rotation_matrix_from_vectors_lowerdim(epc_0, epc)
+            Rcc = self.rotation_matrix_from_vectors_lowerdim(ecc_0, ecc)
+            rpc = pytorch3d.transforms.matrix_to_axis_angle(Rpc)
+            rcc = pytorch3d.transforms.matrix_to_axis_angle(Rcc)
 
-            Rcc = pytorch3d.transforms.quaternion_to_matrix(children_orientations_copy)[:,moi_index,:,:]
+
 
             DRpc_interest = DRpc[:, moi_index, :, :]
             DRcc_interest = DRcc[:, moi_index, :, :]
@@ -778,41 +785,52 @@ class constraints_enforcement(nn.Module):
 
             # a very sketchy way to insert the grad step into the full grad_DX_X matrix
             # obtain the intermediate grad_DX_X with each pair of parent-child update
+            for b in range(batch):
 
-            grad_DX_X_step += np.concatenate((np.zeros((batch,3*(i+1),3*n_vert*grad_per_RCEPC.num_branch)),
-                                            grad_DX_X_step_pc,
-                                            np.zeros((batch,3*(child_idx*n_vert-i-1),3*n_vert*grad_per_RCEPC.num_branch)),
-                                            grad_DX_X_step_cc,
-                                            np.zeros((batch,3*(grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert),3*n_vert*grad_per_RCEPC.num_branch))), axis=1)
-            # grad_DX_X_step = np.concatenate((grad_DX_X_step_pc,
+
+                p_start = 3 * (i)
+                p_end = p_start + 3
+                c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 0)
+                c_end = c_start + 3
+                grad_per_RCEPC.grad_DX_X[:, p_start:p_end, :] = grad_DX_X_step_pc
+                grad_per_RCEPC.grad_DX_X[:, c_start:c_end, :] = grad_DX_X_step_cc
+
+            # grad_DX_X_step += np.concatenate((np.zeros((batch,3*(i+1),3*n_vert*grad_per_RCEPC.num_branch)),
+            #                                 grad_DX_X_step_pc,
+            #                                 np.zeros((batch,3*(child_idx*n_vert-i-1),3*n_vert*grad_per_RCEPC.num_branch)),
+            #                                 grad_DX_X_step_cc,
+            #                                 np.zeros((batch,3*(grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert),3*n_vert*grad_per_RCEPC.num_branch))), axis=1)
+            # # # grad_DX_X_step = np.concatenate((grad_DX_X_step_pc,
             #                                np.zeros((batch, 3 * (n_vert - i - child_idx), 3 * n_vert * grad_per_RCEPC.num_branch)),
             #                                grad_DX_X_step_cc), axis=1)
 
 
-            J_00, J_01, J_10, J_11, J = RCEPC_gradient.gradient_DX_MOI(pv_0, pv_1,cv_0, cv_1,
-                                                                       DRpc_interest, DRcc_interest, Drpc, Drcc, Dr,
-                                                                       pmoi, cmoi)
-            grad_DX_MOI_step_pc = np.concatenate((
-                np.zeros((batch, 3, 3 * i)),
-                J_00, J_01,
-                np.zeros((batch, 3, 3 * (child_idx * n_vert - i - 2))),
-                J_02, J_03,
-                np.zeros((batch, 3, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert)))
-            ), axis=2)
-            grad_DX_MOI_step_cc = np.concatenate((
-                np.zeros((batch, 3, 3 * i)),
-                J_10, J_11,
-                np.zeros((batch, 3, 3 * (child_idx * n_vert - i - 2))),
-                J_12, J_13,
-                np.zeros((batch, 3, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert)))
-            ), axis=2)
-            grad_DX_MOI_step += np.concatenate((np.zeros((batch, 3 * (i + 1), 3 * n_vert * grad_per_RCEPC.num_branch)),
-                                              grad_DX_MOI_step_pc,
-                                              np.zeros((batch, 3 * (child_idx * n_vert - i - 1), 3 * n_vert * grad_per_RCEPC.num_branch)),
-                                              grad_DX_MOI_step_cc,
-                                              np.zeros((batch, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert),3 * n_vert * grad_per_RCEPC.num_branch))), axis=1)
 
-        return parent_vertices, parent_orientations, children_vertices, children_orientations.view(batch, n_children, 4)
+
+            # J_00, J_01, J_10, J_11, J = RCEPC_gradient.gradient_DX_MOI(pv_0, pv_1,cv_0, cv_1,
+            #                                                            DRpc_interest, DRcc_interest, Drpc, Drcc, Dr,
+            #                                                            pmoi, cmoi)
+            # grad_DX_MOI_step_pc = np.concatenate((
+            #     np.zeros((batch, 3, 3 * i)),
+            #     J_00, J_01,
+            #     np.zeros((batch, 3, 3 * (child_idx * n_vert - i - 2))),
+            #     J_02, J_03,
+            #     np.zeros((batch, 3, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert)))
+            # ), axis=2)
+            # grad_DX_MOI_step_cc = np.concatenate((
+            #     np.zeros((batch, 3, 3 * i)),
+            #     J_10, J_11,
+            #     np.zeros((batch, 3, 3 * (child_idx * n_vert - i - 2))),
+            #     J_12, J_13,
+            #     np.zeros((batch, 3, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert)))
+            # ), axis=2)
+            # grad_DX_MOI_step += np.concatenate((np.zeros((batch, 3 * (i + 1), 3 * n_vert * grad_per_RCEPC.num_branch)),
+            #                                   grad_DX_MOI_step_pc,
+            #                                   np.zeros((batch, 3 * (child_idx * n_vert - i - 1), 3 * n_vert * grad_per_RCEPC.num_branch)),
+            #                                   grad_DX_MOI_step_cc,
+            #                                   np.zeros((batch, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert),3 * n_vert * grad_per_RCEPC.num_branch))), axis=1)
+
+        return parent_vertices, parent_orientations, children_vertices, children_orientations.view(batch, n_children, 4), grad_per_RCEPC
 
     def apply_rotation(
             self, batch, n_children, edge_q1, edge_q2, rod_MOI1, rod_MOI2,
