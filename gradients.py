@@ -560,6 +560,12 @@ class RCEPC_gradient:
             Dr: axis-angle representation of the difference between parent and child rods, [batch, 3].
             MOIpc: moments of inertia for parent rods, [batch, 3, 3].
             MOIcc: moments of inertia for child rods, [batch, 3, 3].
+        Reutrns:
+            J_00: [batch, 3, 3] gradient of DX_pc with respect to MOI_pc
+            J_01: [batch, 3, 3] gradient of DX_pc with respect to MOI_cc
+            J_10: [batch, 3, 3] gradient of DX_cc with respect to MOI_pc
+            J_11: [batch, 3, 3] gradient of DX_cc with respect to MOI_cc
+            J: [batch, 6, 6] full gradient matrix
         """
         batch_size = Xpc0.shape[0]
         Epc = Xpc1 - Xpc0  # parent edge vector, [batch, 3]
@@ -600,6 +606,17 @@ class RCEPC_gradient:
             Xpc1_init: initial parent rod vertices at pc+1, [batch, 3].
             Xcc0_init: initial child rod vertices at cc, [batch, 3].
             Xcc1_init: initial child rod vertices at cc+1, [batch, 3].
+
+        Returns:
+            J_00: [batch, 3, 3] gradient of DX_pc with respect to X_pc+1
+            J_01: [batch, 3, 3] gradient of DX_pc with respect to X_pc
+            J_02: [batch, 3, 3] gradient of DX_pc with respect to X_cc+1
+            J_03: [batch, 3, 3] gradient of DX_pc with respect to X_cc
+            J_10: [batch, 3, 3] gradient of DX_cc with respect to X_pc+1
+            J_11: [batch, 3, 3] gradient of DX_cc with respect to X_pc
+            J_12: [batch, 3, 3] gradient of DX_cc with respect to X_cc+1
+            J_13: [batch, 3, 3] gradient of DX_cc with respect to X_cc
+            J: [batch, 6, 12] full gradient matrix
         """
         batch_size = Xpc0.shape[0]
 
@@ -634,13 +651,13 @@ class RCEPC_gradient:
         J_13 = -(DRcc - I) - DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ MOIs1 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rcc) @ Sv_cc @ j_norm_cc # [batch, 3, 3], DX_{cc+1} / X_{cc+1}
 
         J = np.zeros((Xpc0.shape[0], 6, 12), dtype=np.float64)
-        J[:, :3, 0:3] = J_01
-        J[:, :3, 3:6] = J_00
-        J[:, :3, 6:9] = J_03
-        J[:, :3, 9:12] = J_02
-        J[:, 3:, 0:3] = J_11
-        J[:, 3:, 3:6] = J_10
-        J[:, 3:, 6:9] = J_13
-        J[:, 3:, 9:12] = J_12
+        J[:, :3, 0:3] = J_01 # DX_pc / X_pc
+        J[:, :3, 3:6] = J_00 # DX_pc / X_pc+1
+        J[:, :3, 6:9] = J_03 # DX_pc / X_cc
+        J[:, :3, 9:12] = J_02 # DX_pc / X_cc+1
+        J[:, 3:, 0:3] = J_11 # DX_cc / X_pc
+        J[:, 3:, 3:6] = J_10 # DX_cc / X_pc+1
+        J[:, 3:, 6:9] = J_13  # DX_cc / X_cc
+        J[:, 3:, 9:12] = J_12 # DX_cc / X_cc+1
 
-        return J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J
+        return J_01, J_00, J_03, J_02, J_11, J_10, J_13, J_12, J

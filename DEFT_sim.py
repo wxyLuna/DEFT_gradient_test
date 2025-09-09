@@ -856,7 +856,7 @@ class DEFT_sim(nn.Module):
             Accumulated total loss (position + velocity) over all timesteps.
         """
         # Number of constraint solution iterations per timestep
-        constraint_loop = 20
+        constraint_loop = 1
 
         # Prepare input to GNN
         inputs = torch.zeros_like(target_b_DLOs_vertices_traj)
@@ -1187,7 +1187,8 @@ class DEFT_sim(nn.Module):
                             self.selected_children_index,
                             torch.linspace(0, (children_vertices.size(1) * 2 - 2), len(self.rigid_body_coupling_index)).to(torch.int),
                             self.momentum_scale_previous,
-                            self.n_vert
+                            self.n_vert,
+                            self.bkgrad
                         )
 
                     previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
@@ -1208,7 +1209,8 @@ class DEFT_sim(nn.Module):
                             self.selected_children_index,
                             torch.linspace(1, (children_vertices.size(1) * 2 - 1), len(self.rigid_body_coupling_index)).to(torch.int),
                             self.momentum_scale_next,
-                            self.n_vert
+                            self.n_vert,
+                            self.bkgrad
                         )
                     previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
                     previous_children_vertices_iteration_edge = children_vertices.clone()
