@@ -914,7 +914,7 @@ class DEFT_sim(nn.Module):
 
         # Main loop over timesteps
         for ith in range(time_horizon):
-            print(f"Iteration {ith}/{time_horizon}")
+            print(f"Time iteration {ith}/{time_horizon}")
 
             # 1) Retrieve current/previous BDLO states
             if ith == 0:

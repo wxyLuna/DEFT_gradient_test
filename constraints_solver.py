@@ -711,7 +711,6 @@ class constraints_enforcement(nn.Module):
             pv_0 = parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
             pv_1 = parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_0 = children_vertices_copy[child_idx - 1::2][:, 0, :]# (batch, 3)
-
             cv_1 = children_vertices_copy[child_idx - 1::2][:, 1, :] # (batch, 3)
             pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
             pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
@@ -729,7 +728,7 @@ class constraints_enforcement(nn.Module):
             DR = torch.matmul(Rpc,torch.linalg.inv(Rcc))
             Dr = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DR)
             Drpc = -(cmoi @ torch.linalg.inv(pmoi + cmoi) @ Dr.unsqueeze(-1)).squeeze(-1)
-            Drcc = -(pmoi @ torch.linalg.inv(pmoi + cmoi) @ Dr.unsqueeze(-1)).squeeze(-1)
+            Drcc = (pmoi @ torch.linalg.inv(pmoi + cmoi) @ Dr.unsqueeze(-1)).squeeze(-1)
 
             DRpc = pytorch3d.transforms.axis_angle_to_matrix(Drpc)
             DRcc = pytorch3d.transforms.axis_angle_to_matrix(Drcc)
