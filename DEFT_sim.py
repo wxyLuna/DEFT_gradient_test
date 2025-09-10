@@ -1198,17 +1198,12 @@ class DEFT_sim(nn.Module):
                             self.bkgrad
                         )
                     self.bkgrad.grad_DX_X = grad_per_RCEPC.grad_DX_X
-                    ## turn off when comparing others too
-                    # b_DLOs_vertices[self.selected_parent_index] = parent_vertices
-                    # children_vertices = children_vertices.view(-1, self.n_vert, 3)
-                    # b_DLOs_vertices[self.selected_children_index] = children_vertices
-
 
                     previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
                     previous_children_vertices_iteration_edge = children_vertices.clone()
 
                     # # Edge2
-                    # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation, grad_DX_X = \
+                    # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation, grad_per_RCEPC = \
                     #     self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
                     #         parent_vertices,
                     #         parent_rod_orientation,
@@ -1225,6 +1220,7 @@ class DEFT_sim(nn.Module):
                     #         self.n_vert,
                     #         self.bkgrad
                     #     )
+                    # self.bkgrad.grad_DX_X = grad_per_RCEPC.grad_DX_X
                     # previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
                     # previous_children_vertices_iteration_edge = children_vertices.clone()
 
@@ -1505,14 +1501,30 @@ class DEFT_sim(nn.Module):
                 )
             previous_parent_vertices_iteration_edge1 = parent_vertices.clone()
             previous_children_vertices_iteration_edge = children_vertices.clone()
-            positions_RECEPC = torch.zeros_like(positions)
-            positions_RECEPC[self.selected_parent_index] = parent_vertices
-            children_vertices = children_vertices.view(-1, self.n_vert, 3)
-            positions_RECEPC[self.selected_children_index] = children_vertices
-            # comment it out if not only using RECEPC!!!!
-            # positions = positions_RECEPC
 
-            
+            # parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation, _ = \
+            #     self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
+            #         parent_vertices,
+            #         parent_rod_orientation,
+            #         previous_parent_vertices_iteration_edge2,
+            #         children_vertices,
+            #         children_rod_orientation,
+            #         previous_children_vertices_iteration_edge,
+            #         self.parent_MOI_matrix,
+            #         self.children_MOI_matrix,
+            #         torch.tensor(self.rigid_body_coupling_index),
+            #         self.selected_children_index,
+            #         torch.linspace(1, (children_vertices.size(1) * 2 - 1), len(self.rigid_body_coupling_index)).to(
+            #             torch.int),
+            #         self.momentum_scale_next,
+            #         self.n_vert,
+            #         bkgrad
+            #     )
+            # previous_parent_vertices_iteration_edge2 = parent_vertices.clone()
+            # previous_children_vertices_iteration_edge = children_vertices.clone()
+
+            children_vertices = children_vertices.view(-1, self.n_vert, 3)
+
             positions, grad_per_Coupling_itr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement_Coupling(
                 parent_vertices,
                 children_vertices,

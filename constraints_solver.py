@@ -697,22 +697,6 @@ class constraints_enforcement(nn.Module):
 
         # -------------------------------gradient implementation-------------------------------
 
-
-
-        DR = self.rotation_matrix_from_vectors_lowerdim(previous_edges, current_edges)
-        DRpc_indices = []
-        DRcc_indices = []
-
-        for b in range(batch):
-            base = b * 2 * n_child_branch
-            for i in range(n_child_branch):
-                DRpc_indices.append(base + i)
-                DRcc_indices.append(base + n_child_branch + i)
-        DRpc = DR[DRpc_indices].reshape(batch,n_child_branch,3,3)
-
-        DRcc = DR[DRcc_indices].reshape(batch,n_child_branch,3,3)
-
-
         pos_map = {int(idx.item()): pos for pos, idx in enumerate(index_selection)}
         children_vertices_copy = children_vertices_copy.reshape(-1, n_vert,3)
         previous_children_vertices_copy = previous_children_vertices_copy.reshape(-1, n_vert,3)
@@ -727,6 +711,7 @@ class constraints_enforcement(nn.Module):
             pv_0 = parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
             pv_1 = parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_0 = children_vertices_copy[child_idx - 1::2][:, 0, :]# (batch, 3)
+
             cv_1 = children_vertices_copy[child_idx - 1::2][:, 1, :] # (batch, 3)
             pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
             pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
@@ -741,30 +726,36 @@ class constraints_enforcement(nn.Module):
             rpc = pytorch3d.transforms.matrix_to_axis_angle(Rpc)
             rcc = pytorch3d.transforms.matrix_to_axis_angle(Rcc)
 
+            DR = torch.matmul(Rpc,torch.linalg.inv(Rcc))
+            Dr = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DR)
+            Drpc = -(cmoi @ torch.linalg.inv(pmoi + cmoi) @ Dr.unsqueeze(-1)).squeeze(-1)
+            Drcc = -(pmoi @ torch.linalg.inv(pmoi + cmoi) @ Dr.unsqueeze(-1)).squeeze(-1)
 
+            DRpc = pytorch3d.transforms.axis_angle_to_matrix(Drpc)
+            DRcc = pytorch3d.transforms.axis_angle_to_matrix(Drcc)
 
-            DRpc_interest = DRpc[:, moi_index, :, :]
-            DRcc_interest = DRcc[:, moi_index, :, :]
-            Drpc = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DRpc_interest)
-            Drcc = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DRcc_interest)
-
-            DR_pc_cc = torch.matmul(DRpc_interest, torch.linalg.inv(DRcc_interest))
-            Dr = pytorch3d.transforms.rotation_conversions.matrix_to_axis_angle(DR_pc_cc)
-
+            # function result for DX
+            DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
+            DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
+            # equation result for DX
+            func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
+            func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
+            print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
+            print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
 
             Rcc = Rcc.detach().numpy()
-            DRpc_interest = DRpc_interest.detach().numpy()
-            DRcc_interest = DRcc_interest.detach().numpy()
             Drpc = Drpc.detach().numpy()
             Drcc = Drcc.detach().numpy()
+            DRpc = DRpc.detach().numpy()
+            DRcc = DRcc.detach().numpy()
             Dr = Dr.detach().numpy()
             pmoi = pmoi.detach().numpy()
             cmoi = cmoi.detach().numpy()
 
             #update DX/MOI, DX/X]
-
+            #DX_pp, DX_pp+1, DX_pc, DX_pc+1, DX_cp, DX_cp+1, DX_cc, DX_cc+1, J
             J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J = RCEPC_gradient.gradient_DX_X(pv_0, pv_1, cv_0, cv_1,
-                                                                                             DRpc_interest, DRcc_interest, Drpc, Drcc, Dr,
+                                                                                             DRpc, DRcc, Drpc, Drcc, Dr,
                                                                                              pmoi, cmoi, Rcc, rpc, rcc,
                                                                                              pv_init_0, pv_init_1,
                                                                                              cv_init_0, cv_init_1)
@@ -800,6 +791,7 @@ class constraints_enforcement(nn.Module):
             #                                 np.zeros((batch,3*(child_idx*n_vert-i-1),3*n_vert*grad_per_RCEPC.num_branch)),
             #                                 grad_DX_X_step_cc,
             #                                 np.zeros((batch,3*(grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert),3*n_vert*grad_per_RCEPC.num_branch))), axis=1)
+            # grad_per_RCEPC.grad_DX_X = grad_DX_X_step
             # # # grad_DX_X_step = np.concatenate((grad_DX_X_step_pc,
             #                                np.zeros((batch, 3 * (n_vert - i - child_idx), 3 * n_vert * grad_per_RCEPC.num_branch)),
             #                                grad_DX_X_step_cc), axis=1)
