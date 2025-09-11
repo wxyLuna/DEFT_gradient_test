@@ -641,6 +641,7 @@ class constraints_enforcement(nn.Module):
         n_children = len(index_selection)
         grad_per_RCEPC = bkgrad
 
+
         # 1) Collect 'previous' edges and 'current' edges from both parent and children rods
         previous_edges = torch.cat(
             (
@@ -660,15 +661,20 @@ class constraints_enforcement(nn.Module):
 
         # 2) Collect current orientations, then compute quaternion that rotates 'previous_edges' to 'current_edges'
         orientations = torch.cat((parent_orientations[:, index_selection], children_orientations), dim=0).view(-1, 4)
+        # print('orientations', orientations)
         quaternion = pytorch3d.transforms.matrix_to_quaternion(
             self.rotation_matrix_from_vectors_lowerdim(previous_edges, current_edges)
         )
+
 
 
         # 3) Combine new rotation quaternion with existing orientation
         quaternion_magnitude = self.quaternion_magnitude(quaternion)
         # (Optional early exit if all are within tolerance, commented out here)
         orientations = pytorch3d.transforms.quaternion_multiply(quaternion, orientations)
+        print('orientations',orientations)
+
+
 
         # 4) Split updated orientations back into parent/child
         parent_orientations[:, index_selection] = orientations.view(2 * batch, -1, 4)[:batch]
@@ -679,6 +685,7 @@ class constraints_enforcement(nn.Module):
                                          dim=0).T.flatten()
         parent_rod_vertices = parent_vertices[:, parent_desired_order]
         children_rod_vertices = children_vertices[:, :, 0:2].reshape(-1, children_vertices.size()[1] * 2, 3)
+        parent_rod_vertices_preupdate = parent_rod_vertices.clone()
 
         # 6) Apply further rotation updates based on momentum scale
         parent_rod_vertices, parent_rod_quaternion, children_rod_vertices, children_orientations = self.apply_rotation(
@@ -689,6 +696,8 @@ class constraints_enforcement(nn.Module):
             parent_rod_vertices, children_rod_vertices,
             momentum_scale_previous
         )
+        # print('parent_orientations',parent_orientations[:, index_selection])
+        # print('parent_rod_vertices update diff',parent_rod_vertices-parent_rod_vertices_preupdate)
 
         # 7) Put updated vertices and orientations back in place
         parent_vertices[:, parent_desired_order] = parent_rod_vertices
@@ -717,10 +726,13 @@ class constraints_enforcement(nn.Module):
             cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
             cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
             epc_0 = pv_init_1 - pv_init_0
+            # print('pv_init_1',pv_init_1)
             ecc_0 = cv_init_1 - cv_init_0
             epc = pv_1 - pv_0
             ecc = cv_1 - cv_0
             Rpc = self.rotation_matrix_from_vectors_lowerdim(epc_0, epc)
+            # print('epc_0',epc_0)
+            # print('Rpc',Rpc)
             Rcc = self.rotation_matrix_from_vectors_lowerdim(ecc_0, ecc)
             rpc = pytorch3d.transforms.matrix_to_axis_angle(Rpc)
             rcc = pytorch3d.transforms.matrix_to_axis_angle(Rcc)
@@ -736,9 +748,13 @@ class constraints_enforcement(nn.Module):
             # function result for DX
             DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
             DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
+            # print('DXpc_output',DXpc_output)
+
+
             # equation result for DX
             func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
             func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
+            # print('func_DXpc_right',func_DXpc_right)
             print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
             print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
 

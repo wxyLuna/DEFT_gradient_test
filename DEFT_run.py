@@ -592,7 +592,7 @@ if __name__ == "__main__":
     parser.add_argument("--total_time", type=int, default=500)
 
     # train_time_horizon is how many timesteps we simulate in each training iteration
-    parser.add_argument("--train_time_horizon", type=int, default=3)
+    parser.add_argument("--train_time_horizon", type=int, default=10)
 
     # Whether to visualize the initial undeformed vertices
     parser.add_argument("--undeform_vis", type=bool, default=False)
