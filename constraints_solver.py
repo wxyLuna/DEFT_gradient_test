@@ -513,12 +513,16 @@ class constraints_enforcement(nn.Module):
                 grad_X_pc_interest_list.append(grad_per_ICEC.grad_DX_X[b, p_start:p_end, :].copy())
                 grad_X_cc_interest_list.append(grad_per_ICEC.grad_DX_X[b, c_start:c_end, :].copy())
 
+
+
             # Stack into tensor shape (B, 3, N)
             grad_X_pc_interest = np.stack(grad_X_pc_interest_list, axis=0)
             grad_X_cc_interest = np.stack(grad_X_cc_interest_list, axis=0)
 
+
             # ___Update the gradient for the current vertices___
             grad_DX_X_interest = np.concatenate((grad_X_pc_interest, grad_X_cc_interest), axis=1)
+            # print('grad_DX_X_interest', grad_DX_X_interest.shape)
 
             grad_chain_passed_DX_X = grad_DX_X_step @ grad_DX_X_interest
 
@@ -672,9 +676,6 @@ class constraints_enforcement(nn.Module):
         quaternion_magnitude = self.quaternion_magnitude(quaternion)
         # (Optional early exit if all are within tolerance, commented out here)
         orientations = pytorch3d.transforms.quaternion_multiply(quaternion, orientations)
-        print('orientations',orientations)
-
-
 
         # 4) Split updated orientations back into parent/child
         parent_orientations[:, index_selection] = orientations.view(2 * batch, -1, 4)[:batch]
@@ -696,8 +697,6 @@ class constraints_enforcement(nn.Module):
             parent_rod_vertices, children_rod_vertices,
             momentum_scale_previous
         )
-        # print('parent_orientations',parent_orientations[:, index_selection])
-        # print('parent_rod_vertices update diff',parent_rod_vertices-parent_rod_vertices_preupdate)
 
         # 7) Put updated vertices and orientations back in place
         parent_vertices[:, parent_desired_order] = parent_rod_vertices
@@ -794,9 +793,9 @@ class constraints_enforcement(nn.Module):
             for b in range(batch):
 
 
-                p_start = 3 * (i)
+                p_start = 3 * (i+1)
                 p_end = p_start + 3
-                c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 0)
+                c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 1)
                 c_end = c_start + 3
                 grad_per_RCEPC.grad_DX_X[:, p_start:p_end, :] = grad_DX_X_step_pc
                 grad_per_RCEPC.grad_DX_X[:, c_start:c_end, :] = grad_DX_X_step_cc

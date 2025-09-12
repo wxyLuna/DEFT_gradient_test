@@ -1354,7 +1354,7 @@ class DEFT_sim(nn.Module):
                                                                             self.parent_mass,
                                                                             self.children_mass,
                                                                             0*1e-6,# eps_mass
-                                                                            1*1e-8)# eps_position
+                                                                            2*1e-5)# eps_position
 
         #--------------calculate analytical ICE gradient----------------
         d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
