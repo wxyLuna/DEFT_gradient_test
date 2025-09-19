@@ -605,8 +605,8 @@ class constraints_enforcement(nn.Module):
 
     def Rotation_Constraints_Enforcement_Parent_Children(
             self,
-            parent_vertices, parent_orientations, previous_parent_vertices,
-            children_vertices, children_orientations, previous_children_vertices,
+            parent_vertices, parent_orientations, previous_parent_vertices, init_parent_vertices,
+            children_vertices, children_orientations, previous_children_vertices, init_children_vertices,
             parent_MOIs, children_MOIs, index_selection, selected_children_index, parent_MOI_index, momentum_scale_previous, n_vert, bkgrad
     ):
         """
@@ -632,10 +632,12 @@ class constraints_enforcement(nn.Module):
         """
         parent_vertices_copy = parent_vertices.clone()
         children_vertices_copy = children_vertices.clone()
-        parent_orientations_copy = parent_orientations.clone().detach().numpy()
+        parent_orientations_copy = parent_orientations.clone()
         children_orientations_copy = children_orientations.clone()
         previous_parent_vertices_copy = previous_parent_vertices.clone()
         previous_children_vertices_copy = previous_children_vertices.clone()
+        init_parent_vertices_copy = init_parent_vertices.clone()
+        init_children_vertices_copy = init_children_vertices.clone()
 
         n_child_branch = children_vertices.shape[1]
         RCEPC_gradient = gradients.RCEPC_gradient()
@@ -669,8 +671,6 @@ class constraints_enforcement(nn.Module):
         quaternion = pytorch3d.transforms.matrix_to_quaternion(
             self.rotation_matrix_from_vectors_lowerdim(previous_edges, current_edges)
         )
-
-
 
         # 3) Combine new rotation quaternion with existing orientation
         quaternion_magnitude = self.quaternion_magnitude(quaternion)
@@ -720,19 +720,18 @@ class constraints_enforcement(nn.Module):
             pv_1 = parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_0 = children_vertices_copy[child_idx - 1::2][:, 0, :]# (batch, 3)
             cv_1 = children_vertices_copy[child_idx - 1::2][:, 1, :] # (batch, 3)
-            pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
-            pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
-            cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
-            cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
+            pv_init_0 = init_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
+            pv_init_1 = init_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
+            cv_init_0 = init_children_vertices_copy[child_idx - 1::2][:, 0, :]
+            cv_init_1 = init_children_vertices_copy[child_idx - 1::2][:, 1, :]
             epc_0 = pv_init_1 - pv_init_0
-            # print('pv_init_1',pv_init_1)
             ecc_0 = cv_init_1 - cv_init_0
             epc = pv_1 - pv_0
             ecc = cv_1 - cv_0
             Rpc = self.rotation_matrix_from_vectors_lowerdim(epc_0, epc)
-            # print('epc_0',epc_0)
-            # print('Rpc',Rpc)
             Rcc = self.rotation_matrix_from_vectors_lowerdim(ecc_0, ecc)
+            # Rpc = pytorch3d.transforms.quaternion_to_matrix(parent_orientations_copy[:, i])
+            # Rcc = pytorch3d.transforms.quaternion_to_matrix(children_orientations_copy[:, child_idx - 1])
             rpc = pytorch3d.transforms.matrix_to_axis_angle(Rpc)
             rcc = pytorch3d.transforms.matrix_to_axis_angle(Rcc)
 
@@ -744,18 +743,18 @@ class constraints_enforcement(nn.Module):
             DRpc = pytorch3d.transforms.axis_angle_to_matrix(Drpc)
             DRcc = pytorch3d.transforms.axis_angle_to_matrix(Drcc)
 
-            # function result for DX
-            DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
-            DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
-            # print('DXpc_output',DXpc_output)
+            # # function result for DX
+            # DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
+            # DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
+            # # print('DXpc_output',DXpc_output)
 
 
-            # equation result for DX
-            func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
-            func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
-            # print('func_DXpc_right',func_DXpc_right)
-            print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
-            print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
+            # # equation result for DX
+            # func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
+            # func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
+            # # print('func_DXpc_right',func_DXpc_right)
+            # print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
+            # print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
 
             Rcc = Rcc.detach().numpy()
             Drpc = Drpc.detach().numpy()

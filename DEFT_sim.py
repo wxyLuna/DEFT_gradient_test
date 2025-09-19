@@ -1078,7 +1078,6 @@ class DEFT_sim(nn.Module):
 
             # 5) Constraints Enforcement (rotational and inextensibility)
             if ith == 0:
-
                 previous_parent_vertices_iteration_edge1 = b_DLOs_vertices[self.selected_parent_index].clone()
                 previous_parent_vertices_iteration_edge2 = b_DLOs_vertices[self.selected_parent_index].clone()
                 previous_children_vertices_iteration_edge = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3).clone()
@@ -1087,11 +1086,14 @@ class DEFT_sim(nn.Module):
                 previous_parent_vertices_iteration_edge2_copy = previous_parent_vertices_iteration_edge2.clone()
                 previous_children_vertices_iteration_edge_copy = previous_children_vertices_iteration_edge.clone()
 
-
                 if inference_1_batch:
                     previous_parent_vertices_iteration_edge1 = previous_parent_vertices_iteration_edge1.detach().cpu().numpy().copy()
                     previous_parent_vertices_iteration_edge2 = previous_parent_vertices_iteration_edge2.detach().cpu().numpy().copy()
                     previous_children_vertices_iteration_edge = previous_children_vertices_iteration_edge.detach().cpu().numpy().copy()
+
+                init_parent_vertices_edge1 = previous_parent_vertices_iteration_edge1_copy
+                init_parent_vertices_edge2 = previous_parent_vertices_iteration_edge2_copy
+                init_children_vertices = previous_children_vertices_iteration_edge_copy
 
             b_DLOs_vertices_input = b_DLOs_vertices.clone() # for numerical gradient checking
             # Reset gradient storage for inextensibility enforcement
@@ -1193,9 +1195,11 @@ class DEFT_sim(nn.Module):
                             parent_vertices,
                             parent_rod_orientation,
                             previous_parent_vertices_iteration_edge1,
+                            init_parent_vertices_edge1.clone(),
                             children_vertices,
                             children_rod_orientation,
                             previous_children_vertices_iteration_edge,
+                            init_children_vertices.clone(),
                             self.parent_MOI_matrix,
                             self.children_MOI_matrix,
                             torch.tensor(self.rigid_body_coupling_index) - 1,
@@ -1266,8 +1270,17 @@ class DEFT_sim(nn.Module):
                     # self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
                     # self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
-                ratio, absolute_error, relative_error = self.numerical_gradient_checking(constraint_loop, self.bkgrad, b_DLOs_vertices_input,parent_rod_orientation_copy,children_rod_orientation_copy,
-                                                                                         previous_parent_vertices_iteration_edge1_copy, previous_parent_vertices_iteration_edge2_copy, previous_children_vertices_iteration_edge_copy)
+                ratio, absolute_error, relative_error = self.numerical_gradient_checking(constraint_loop,
+                                                                                         self.bkgrad,
+                                                                                         b_DLOs_vertices_input,
+                                                                                         parent_rod_orientation_copy,
+                                                                                         children_rod_orientation_copy,
+                                                                                         previous_parent_vertices_iteration_edge1_copy,
+                                                                                         previous_parent_vertices_iteration_edge2_copy,
+                                                                                         previous_children_vertices_iteration_edge_copy,
+                                                                                         init_parent_vertices_edge1,
+                                                                                         init_parent_vertices_edge2,
+                                                                                         init_children_vertices)
 
                 save_dir = f"./gradient_check/run_{run_idx}"
 
@@ -1340,8 +1353,19 @@ class DEFT_sim(nn.Module):
         # Return the accumulated losses
         return traj_loss_eval, total_loss
 
-    def numerical_gradient_checking(self, constraint_loop, bkgrad, b_DLOs_vertices_input, parent_rod_orientation, children_rod_orientation,
-                                    previous_parent_vertices_iteration_edge1, previous_parent_vertices_iteration_edge2, previous_children_vertices_iteration_edge):
+    def numerical_gradient_checking(self,
+                                    constraint_loop,
+                                    bkgrad,
+                                    b_DLOs_vertices_input,
+                                    parent_rod_orientation,
+                                    children_rod_orientation,
+                                    previous_parent_vertices_iteration_edge1,
+                                    previous_parent_vertices_iteration_edge2,
+                                    previous_children_vertices_iteration_edge,
+                                    init_parent_vertices_edge1,
+                                    init_parent_vertices_edge2,
+                                    init_children_vertices
+                                    ):
         # Perturbations for finite difference gradient checking
         (d_positions_input, d_mass_diag_vals, d_mass,
         coupling_mass_scale_pos, coupling_mass_scale_neg,
@@ -1383,7 +1407,11 @@ class DEFT_sim(nn.Module):
                                                             children_rod_orientation.clone(),
                                                             previous_parent_vertices_iteration_edge1.clone(),
                                                             previous_parent_vertices_iteration_edge2.clone(),
-                                                            previous_children_vertices_iteration_edge.clone())
+                                                            previous_children_vertices_iteration_edge.clone(),
+                                                            init_parent_vertices_edge1.clone(),
+                                                            init_parent_vertices_edge2.clone(),
+                                                            init_children_vertices.clone()
+                                                            )
 
 
         b_DLOs_vertices_neg = self.constraint_loop_iteration(self.batch,
@@ -1403,7 +1431,11 @@ class DEFT_sim(nn.Module):
                                                             children_rod_orientation.clone(),
                                                             previous_parent_vertices_iteration_edge1.clone(),
                                                             previous_parent_vertices_iteration_edge2.clone(),
-                                                            previous_children_vertices_iteration_edge.clone())
+                                                            previous_children_vertices_iteration_edge.clone(),
+                                                            init_parent_vertices_edge1.clone(),
+                                                            init_parent_vertices_edge2.clone(),
+                                                            init_children_vertices.clone()
+                                                        )
 
 
         delta_posisiton_pos = b_DLOs_vertices_pos - (b_DLOs_vertices_input.clone() + d_positions_input)
@@ -1477,9 +1509,29 @@ class DEFT_sim(nn.Module):
 
         return d_positions, d_mass_diag_vals, d_mass, coupling_mass_scale_pos, coupling_mass_scale_neg, mass_scale_pos_inext, mass_scale_neg_inext
 
-    def constraint_loop_iteration(self, batch, current_vertices, nominal_length, DLO_mass, clamped_index,
-                                    scale, perturbed_mass_scale, perturbed_coup_mass_scale, zero_mask_num, undeformed_vertices, bkgrad, n_branch, constraint_loop, parent_rod_orientation, children_rod_orientation,
-                                  previous_parent_vertices_iteration_edge1, previous_parent_vertices_iteration_edge2, previous_children_vertices_iteration_edge):
+    def constraint_loop_iteration(self,
+                                  batch,
+                                  current_vertices,
+                                  nominal_length,
+                                  DLO_mass,
+                                  clamped_index,
+                                  scale,
+                                  perturbed_mass_scale,
+                                  perturbed_coup_mass_scale,
+                                  zero_mask_num,
+                                  undeformed_vertices,
+                                  bkgrad,
+                                  n_branch,
+                                  constraint_loop,
+                                  parent_rod_orientation,
+                                  children_rod_orientation,
+                                  previous_parent_vertices_iteration_edge1,
+                                  previous_parent_vertices_iteration_edge2,
+                                  previous_children_vertices_iteration_edge,
+                                  init_parent_vertices_edge1,
+                                  init_parent_vertices_edge2,
+                                  init_children_vertices
+                                  ):
         '''Iterative simulation loop for constraint satisfaction.
         :param batch: batch size
         :param current_vertices: perturbed current positions of all vertices
@@ -1501,15 +1553,16 @@ class DEFT_sim(nn.Module):
         for _ in range(constraint_loop):
             parent_vertices = positions[self.selected_parent_index]
             children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
-            print('in numerical')
             parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation, _ = \
                 self.constraints_enforcement.Rotation_Constraints_Enforcement_Parent_Children(
                     parent_vertices,
                     parent_rod_orientation,
                     previous_parent_vertices_iteration_edge1,
+                    init_parent_vertices_edge1,
                     children_vertices,
                     children_rod_orientation,
                     previous_children_vertices_iteration_edge,
+                    init_children_vertices,
                     self.parent_MOI_matrix,
                     self.children_MOI_matrix,
                     torch.tensor(self.rigid_body_coupling_index) - 1,
