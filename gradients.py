@@ -669,4 +669,6 @@ class RCEPC_gradient:
         J[:, 3:, 6:9] = J_13  # DX_cc / X_cc
         J[:, 3:, 9:12] = J_12 # DX_cc / X_cc+1
 
+        # J[]
+
         return J_01, J_00, J_03, J_02, J_11, J_10, J_13, J_12, J

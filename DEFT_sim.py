@@ -1221,9 +1221,11 @@ class DEFT_sim(nn.Module):
                     #         parent_vertices,
                     #         parent_rod_orientation,
                     #         previous_parent_vertices_iteration_edge2,
+                    #         init_parent_vertices_edge2.clone(),
                     #         children_vertices,
                     #         children_rod_orientation,
                     #         previous_children_vertices_iteration_edge,
+                    #         init_children_vertices.clone(),
                     #         self.parent_MOI_matrix,
                     #         self.children_MOI_matrix,
                     #         torch.tensor(self.rigid_body_coupling_index),
@@ -1378,7 +1380,7 @@ class DEFT_sim(nn.Module):
                                                                             self.parent_mass,
                                                                             self.children_mass,
                                                                             0*1e-6,# eps_mass
-                                                                            2*1e-5)# eps_position
+                                                                            3*1e-5)# eps_position
 
         #--------------calculate analytical ICE gradient----------------
         d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
@@ -1580,9 +1582,11 @@ class DEFT_sim(nn.Module):
             #         parent_vertices,
             #         parent_rod_orientation,
             #         previous_parent_vertices_iteration_edge2,
+            #         init_parent_vertices_edge2,
             #         children_vertices,
             #         children_rod_orientation,
             #         previous_children_vertices_iteration_edge,
+            #         init_children_vertices,
             #         self.parent_MOI_matrix,
             #         self.children_MOI_matrix,
             #         torch.tensor(self.rigid_body_coupling_index),

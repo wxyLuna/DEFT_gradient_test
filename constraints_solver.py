@@ -708,6 +708,7 @@ class constraints_enforcement(nn.Module):
         pos_map = {int(idx.item()): pos for pos, idx in enumerate(index_selection)}
         children_vertices_copy = children_vertices_copy.reshape(-1, n_vert,3)
         previous_children_vertices_copy = previous_children_vertices_copy.reshape(-1, n_vert,3)
+        init_children_vertices_copy = init_children_vertices_copy.reshape(-1, n_vert,3)
         #initialize the grad_DX_X_step and grad_DX_MOI_step matrix for RCEPC
         grad_DX_X_step = np.zeros((batch, 3 * n_vert * grad_per_RCEPC.num_branch, 3 * n_vert * grad_per_RCEPC.num_branch))
         grad_DX_MOI_step = np.zeros((batch, 3 * n_vert * grad_per_RCEPC.num_branch, 3 * n_vert * grad_per_RCEPC.num_branch))
@@ -720,11 +721,16 @@ class constraints_enforcement(nn.Module):
             pv_1 = parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_0 = children_vertices_copy[child_idx - 1::2][:, 0, :]# (batch, 3)
             cv_1 = children_vertices_copy[child_idx - 1::2][:, 1, :] # (batch, 3)
+            # pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
+            # pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
+            # cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
+            # cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
             pv_init_0 = init_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
             pv_init_1 = init_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_init_0 = init_children_vertices_copy[child_idx - 1::2][:, 0, :]
             cv_init_1 = init_children_vertices_copy[child_idx - 1::2][:, 1, :]
             epc_0 = pv_init_1 - pv_init_0
+            # print('pv_init_1',pv_init_1)
             ecc_0 = cv_init_1 - cv_init_0
             epc = pv_1 - pv_0
             ecc = cv_1 - cv_0
@@ -743,18 +749,18 @@ class constraints_enforcement(nn.Module):
             DRpc = pytorch3d.transforms.axis_angle_to_matrix(Drpc)
             DRcc = pytorch3d.transforms.axis_angle_to_matrix(Drcc)
 
-            # # function result for DX
-            # DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
-            # DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
-            # # print('DXpc_output',DXpc_output)
+            # function result for DX
+            DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
+            DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
+            # print('DXpc_output',DXpc_output)
 
 
             # # equation result for DX
-            # func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
-            # func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
+            func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
+            func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
             # # print('func_DXpc_right',func_DXpc_right)
-            # print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
-            # print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
+            print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
+            print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
 
             Rcc = Rcc.detach().numpy()
             Drpc = Drpc.detach().numpy()
@@ -765,7 +771,7 @@ class constraints_enforcement(nn.Module):
             pmoi = pmoi.detach().numpy()
             cmoi = cmoi.detach().numpy()
 
-            #update DX/MOI, DX/X]
+            #___Update the gradients___
             #DX_pp, DX_pp+1, DX_pc, DX_pc+1, DX_cp, DX_cp+1, DX_cc, DX_cc+1, J
             J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J = RCEPC_gradient.gradient_DX_X(pv_0, pv_1, cv_0, cv_1,
                                                                                              DRpc, DRcc, Drpc, Drcc, Dr,
@@ -786,12 +792,35 @@ class constraints_enforcement(nn.Module):
                 J_12, J_13,
                 np.zeros((batch, 3, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert)))
             ), axis=2)
+            # grad_DX_X_step_cc = J[:, 3:, :]
 
-            # a very sketchy way to insert the grad step into the full grad_DX_X matrix
-            # obtain the intermediate grad_DX_X with each pair of parent-child update
+            # initialize gradient of interest storage
+            grad_X_pc_interest_list = []
+            grad_X_cc_interest_list = []
+
+            #for DX_pc+1_x, DX_cc+1_x old gradient
             for b in range(batch):
+                p_start = 3 * (i+1)
+                p_end = p_start + 3
+                c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 1)
+                c_end = c_start + 3
+
+                grad_X_pc_interest_list.append(grad_per_RCEPC.grad_DX_X[b, p_start:p_end, :].copy())
+                grad_X_cc_interest_list.append(grad_per_RCEPC.grad_DX_X[b, c_start:c_end, :].copy())
+
+            # Stack into tensor shape (B, 3, N)
+            grad_X_pc_interest = np.stack(grad_X_pc_interest_list, axis=0)
+            grad_X_cc_interest = np.stack(grad_X_cc_interest_list, axis=0)
+
+            grad_DX_X_interest = np.concatenate((grad_X_pc_interest, grad_X_cc_interest), axis=1)
 
 
+            # grad_chain_passed_DX_X = np.matmul(J.transpose(0, 2, 1), grad_DX_X_interest)
+            # grad_chain_passed_DX_X_cc = grad_DX_X_step_cc @ grad_X_cc_interest
+
+
+
+            for b in range(batch):
                 p_start = 3 * (i+1)
                 p_end = p_start + 3
                 c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 1)
