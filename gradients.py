@@ -660,15 +660,29 @@ class RCEPC_gradient:
         J_13 = -(DRcc - I) - DRcc @ self.hat(Ecc) @ self.left_jacobian_so3(Drcc) @ MOIs1 @ np.linalg.inv(self.left_jacobian_so3(Dr)) @ Rcc @ self.left_jacobian_so3(rcc) @ Sv_cc @ j_norm_cc # [batch, 3, 3], DX_{cc+1} / X_{cc+1}
 
         J = np.zeros((Xpc0.shape[0], 6, 12), dtype=np.float64)
-        J[:, :3, 0:3] = J_01 # DX_pc / X_pc
-        J[:, :3, 3:6] = J_00 # DX_pc / X_pc+1
-        J[:, :3, 6:9] = J_03 # DX_pc / X_cc
-        J[:, :3, 9:12] = J_02 # DX_pc / X_cc+1
-        J[:, 3:, 0:3] = J_11 # DX_cc / X_pc
-        J[:, 3:, 3:6] = J_10 # DX_cc / X_pc+1
-        J[:, 3:, 6:9] = J_13  # DX_cc / X_cc
-        J[:, 3:, 9:12] = J_12 # DX_cc / X_cc+1
+        J[:, :3, 0:3] = J_01 # DX_pc+1 / X_pc
+        J[:, :3, 3:6] = J_00 # DX_pc+1 / X_pc+1
+        J[:, :3, 6:9] = J_03 # DX_pc+1 / X_cc
+        J[:, :3, 9:12] = J_02 # DX_pc+1 / X_cc+1
+        J[:, 3:, 0:3] = J_11 # DX_cc+1 / X_pc
+        J[:, 3:, 3:6] = J_10 # DX_cc+1 / X_pc+1
+        J[:, 3:, 6:9] = J_13  # DX_cc+1 / X_cc
+        J[:, 3:, 9:12] = J_12 # DX_cc+1 / X_cc+1
+        # J = np.zeros((Xpc0.shape[0], 6, 6), dtype=np.float64)
+        # J[:, :3, 0:3] = J_01  # DX_pc+1 / X_pc
+        # J[:, :3, 3:6] = J_00  # DX_pc+1 / X_pc+1
+        # J[:, :3, 6:9] = J_03  # DX_pc+1 / X_cc
+        # J[:, :3, 9:12] = J_02  # DX_pc+1 / X_cc+1
+        # J[:, 3:, 0:3] = J_11  # DX_cc+1 / X_pc
+        # J[:, 3:, 3:6] = J_10  # DX_cc+1 / X_pc+1
+        # J[:, 3:, 6:9] = J_13  # DX_cc+1 / X_cc
+        # J[:, 3:, 9:12] = J_12  # DX_cc+1 / X_cc+1
 
-        # J[]
 
-        return J_01, J_00, J_03, J_02, J_11, J_10, J_13, J_12, J
+        grad_DX_X = np.concatenate(
+            (np.concatenate((J_00, J_02), axis=2),
+             np.concatenate((J_10, J_12), axis=2)),
+            axis = 1
+            )
+
+        return J_01, J_00, J_03, J_02, J_11, J_10, J_13, J_12, J, grad_DX_X

@@ -710,8 +710,7 @@ class constraints_enforcement(nn.Module):
         previous_children_vertices_copy = previous_children_vertices_copy.reshape(-1, n_vert,3)
         init_children_vertices_copy = init_children_vertices_copy.reshape(-1, n_vert,3)
         #initialize the grad_DX_X_step and grad_DX_MOI_step matrix for RCEPC
-        grad_DX_X_step = np.zeros((batch, 3 * n_vert * grad_per_RCEPC.num_branch, 3 * n_vert * grad_per_RCEPC.num_branch))
-        grad_DX_MOI_step = np.zeros((batch, 3 * n_vert * grad_per_RCEPC.num_branch, 3 * n_vert * grad_per_RCEPC.num_branch))
+
         for i, child_idx in zip(index_selection, selected_children_index):
 
             moi_index = pos_map[int(i.item())]
@@ -748,18 +747,18 @@ class constraints_enforcement(nn.Module):
             DRpc = pytorch3d.transforms.axis_angle_to_matrix(Drpc)
             DRcc = pytorch3d.transforms.axis_angle_to_matrix(Drcc)
 
-            # function result for DX
-            DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
-            DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
-            # print('DXpc_output',DXpc_output)
+            calculate_DX = True
+            if calculate_DX:
+                # function result for DX
+                DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
+                DXcc_output =children_vertices[:,child_idx - 1::2,:,:].squeeze(0)[:, 1, :]-cv_1
 
-
-            # # equation result for DX
-            func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
-            func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
-            # # print('func_DXpc_right',func_DXpc_right)
-            print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
-            print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
+                # equation result for DX
+                func_DXpc_right = (DRpc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (pv_1-pv_0).unsqueeze(-1)
+                func_DXcc_right = (DRcc - torch.eye(3).unsqueeze(0).unsqueeze(0).repeat(batch,n_child_branch,1,1)) @ (cv_1-cv_0).unsqueeze(-1)
+                # # print('func_DXpc_right',func_DXpc_right)
+                print('RCEPC DXpc ratio', DXpc_output/func_DXpc_right.squeeze()[child_idx-1,:])
+                print('RCEPC DXcc ratio', DXcc_output/func_DXcc_right.squeeze()[child_idx-1,:])
 
             Rcc = Rcc.detach().numpy()
             Drpc = Drpc.detach().numpy()
@@ -772,7 +771,7 @@ class constraints_enforcement(nn.Module):
 
             #___Update the gradients___
             #DX_pp, DX_pp+1, DX_pc, DX_pc+1, DX_cp, DX_cp+1, DX_cc, DX_cc+1, J
-            J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J = RCEPC_gradient.gradient_DX_X(pv_0, pv_1, cv_0, cv_1,
+            J_00, J_01, J_02, J_03, J_10, J_11, J_12, J_13, J, grad_DX_X_step = RCEPC_gradient.gradient_DX_X(pv_0, pv_1, cv_0, cv_1,
                                                                                              DRpc, DRcc, Drpc, Drcc, Dr,
                                                                                              pmoi, cmoi, Rcc, rpc, rcc,
                                                                                              pv_init_0, pv_init_1,
@@ -784,6 +783,7 @@ class constraints_enforcement(nn.Module):
                 J_02, J_03,
                 np.zeros((batch, 3, 3 * (grad_per_RCEPC.num_branch * n_vert - 2 - child_idx * n_vert)))
             ), axis=2)
+
             grad_DX_X_step_cc = np.concatenate((
                 np.zeros((batch, 3, 3 * i)),
                 J_10, J_11,
@@ -814,18 +814,22 @@ class constraints_enforcement(nn.Module):
             grad_DX_X_interest = np.concatenate((grad_X_pc_interest, grad_X_cc_interest), axis=1)
 
 
-            # grad_chain_passed_DX_X = np.matmul(J.transpose(0, 2, 1), grad_DX_X_interest)
-            # grad_chain_passed_DX_X_cc = grad_DX_X_step_cc @ grad_X_cc_interest
+            grad_chain_passed_DX_X = grad_DX_X_step @ grad_DX_X_interest
 
+            grad_DX_X_step_expanded = np.concatenate((grad_DX_X_step_pc,grad_DX_X_step_cc), axis=1)
 
+            grad_step_DX_X = grad_DX_X_step_expanded + grad_DX_X_interest + grad_chain_passed_DX_X
 
             for b in range(batch):
                 p_start = 3 * (i+1)
                 p_end = p_start + 3
                 c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 1)
                 c_end = c_start + 3
-                grad_per_RCEPC.grad_DX_X[:, p_start:p_end, :] = grad_DX_X_step_pc
-                grad_per_RCEPC.grad_DX_X[:, c_start:c_end, :] = grad_DX_X_step_cc
+                # grad_per_RCEPC.grad_DX_X[:, p_start:p_end, :] = grad_DX_X_step_pc
+                # grad_per_RCEPC.grad_DX_X[:, c_start:c_end, :] = grad_DX_X_step_cc
+                grad_per_RCEPC.grad_DX_X[:, p_start:p_end, :] = grad_step_DX_X[:, :3, :]
+                grad_per_RCEPC.grad_DX_X[:, c_start:c_end, :] = grad_step_DX_X[:, 3:, :]
+            # print('here')
 
             # grad_DX_X_step += np.concatenate((np.zeros((batch,3*(i+1),3*n_vert*grad_per_RCEPC.num_branch)),
             #                                 grad_DX_X_step_pc,

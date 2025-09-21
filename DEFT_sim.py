@@ -856,7 +856,7 @@ class DEFT_sim(nn.Module):
             Accumulated total loss (position + velocity) over all timesteps.
         """
         # Number of constraint solution iterations per timestep
-        constraint_loop = 1
+        constraint_loop = 10
 
         # Prepare input to GNN
         inputs = torch.zeros_like(target_b_DLOs_vertices_traj)
@@ -1381,7 +1381,7 @@ class DEFT_sim(nn.Module):
                                                                             self.parent_mass,
                                                                             self.children_mass,
                                                                             0*1e-6,# eps_mass
-                                                                            3*1e-5)# eps_position
+                                                                            3*1e-8)# eps_position
 
         #--------------calculate analytical ICE gradient----------------
         d_positions = d_positions_input.reshape(self.batch, self.n_branch, self.n_vert, 3).reshape(self.batch, self.n_branch * self.n_vert * 3, 1)
@@ -1393,6 +1393,7 @@ class DEFT_sim(nn.Module):
         #--------------calculate numerical ICE gradient-----------------
         b_DLOs_vertices_pos_input = b_DLOs_vertices_input.clone() + d_positions_input
         b_DLOs_vertices_neg_input = b_DLOs_vertices_input.clone() - d_positions_input
+        print('numerical positive')
         b_DLOs_vertices_pos = self.constraint_loop_iteration(self.batch,
                                                             b_DLOs_vertices_pos_input,
                                                             self.batched_m_restEdgeL,
@@ -1416,7 +1417,7 @@ class DEFT_sim(nn.Module):
                                                             init_children_vertices.clone()
                                                             )
 
-
+        print('numerical negative')
         b_DLOs_vertices_neg = self.constraint_loop_iteration(self.batch,
                                                             b_DLOs_vertices_neg_input,
                                                             self.batched_m_restEdgeL,
@@ -1554,6 +1555,7 @@ class DEFT_sim(nn.Module):
         # previous_parent_vertices_iteration_edge2 = positions[self.selected_parent_index].clone()
         # previous_children_vertices_iteration_edge = positions[self.selected_children_index].view(self.batch, -1,self.n_vert, 3).clone()
         for _ in range(constraint_loop):
+            print('in numerical')
             parent_vertices = positions[self.selected_parent_index]
             children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
             parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation, _ = \
