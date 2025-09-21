@@ -721,16 +721,15 @@ class constraints_enforcement(nn.Module):
             pv_1 = parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
             cv_0 = children_vertices_copy[child_idx - 1::2][:, 0, :]# (batch, 3)
             cv_1 = children_vertices_copy[child_idx - 1::2][:, 1, :] # (batch, 3)
-            # pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
-            # pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
-            # cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
-            # cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
-            pv_init_0 = init_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
-            pv_init_1 = init_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
-            cv_init_0 = init_children_vertices_copy[child_idx - 1::2][:, 0, :]
-            cv_init_1 = init_children_vertices_copy[child_idx - 1::2][:, 1, :]
+            pv_init_0 = previous_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
+            pv_init_1 = previous_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
+            cv_init_0 = previous_children_vertices_copy[child_idx - 1::2][:, 0, :]
+            cv_init_1 = previous_children_vertices_copy[child_idx - 1::2][:, 1, :]
+            # pv_init_0 = init_parent_vertices_copy[:, i:i + 1, :].reshape(batch, 3)  # (batch, 3)
+            # pv_init_1 = init_parent_vertices_copy[:, i + 1:i + 2, :].reshape(batch, 3)  # (batch, 3)
+            # cv_init_0 = init_children_vertices_copy[child_idx - 1::2][:, 0, :]
+            # cv_init_1 = init_children_vertices_copy[child_idx - 1::2][:, 1, :]
             epc_0 = pv_init_1 - pv_init_0
-            # print('pv_init_1',pv_init_1)
             ecc_0 = cv_init_1 - cv_init_0
             epc = pv_1 - pv_0
             ecc = cv_1 - cv_0

@@ -1081,19 +1081,20 @@ class DEFT_sim(nn.Module):
                 previous_parent_vertices_iteration_edge1 = b_DLOs_vertices[self.selected_parent_index].clone()
                 previous_parent_vertices_iteration_edge2 = b_DLOs_vertices[self.selected_parent_index].clone()
                 previous_children_vertices_iteration_edge = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3).clone()
-                # for numerical gradient checking
-                previous_parent_vertices_iteration_edge1_copy = previous_parent_vertices_iteration_edge1.clone()
-                previous_parent_vertices_iteration_edge2_copy = previous_parent_vertices_iteration_edge2.clone()
-                previous_children_vertices_iteration_edge_copy = previous_children_vertices_iteration_edge.clone()
 
                 if inference_1_batch:
                     previous_parent_vertices_iteration_edge1 = previous_parent_vertices_iteration_edge1.detach().cpu().numpy().copy()
                     previous_parent_vertices_iteration_edge2 = previous_parent_vertices_iteration_edge2.detach().cpu().numpy().copy()
                     previous_children_vertices_iteration_edge = previous_children_vertices_iteration_edge.detach().cpu().numpy().copy()
 
-                init_parent_vertices_edge1 = previous_parent_vertices_iteration_edge1_copy
-                init_parent_vertices_edge2 = previous_parent_vertices_iteration_edge2_copy
-                init_children_vertices = previous_children_vertices_iteration_edge_copy
+                init_parent_vertices_edge1 = previous_parent_vertices_iteration_edge1.clone()
+                init_parent_vertices_edge2 = previous_parent_vertices_iteration_edge2.clone()
+                init_children_vertices = previous_children_vertices_iteration_edge.clone()
+
+            # for numerical gradient checking
+            previous_parent_vertices_iteration_edge1_copy = previous_parent_vertices_iteration_edge1.clone()
+            previous_parent_vertices_iteration_edge2_copy = previous_parent_vertices_iteration_edge2.clone()
+            previous_children_vertices_iteration_edge_copy = previous_children_vertices_iteration_edge.clone()
 
             b_DLOs_vertices_input = b_DLOs_vertices.clone() # for numerical gradient checking
             # Reset gradient storage for inextensibility enforcement
@@ -1256,21 +1257,21 @@ class DEFT_sim(nn.Module):
                     self.bkgrad.grad_DX_M = grad_per_ICEC.grad_DX_M
 
                     # Finally, general inextensibility constraints along each branch
-                    # b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-                    #     self.batch,
-                    #     b_DLOs_vertices,
-                    #     self.batched_m_restEdgeL,
-                    #     self.mass_matrix,
-                    #     self.clamped_index,
-                    #     self.inext_scale,
-                    #     self.mass_scale,
-                    #     self.zero_mask_num,
-                    #     self.b_undeformed_vert,
-                    #     self.bkgrad,
-                    #     self.n_branch
-                    # )
-                    # self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
-                    # self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
+                    b_DLOs_vertices, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                        self.batch,
+                        b_DLOs_vertices,
+                        self.batched_m_restEdgeL,
+                        self.mass_matrix,
+                        self.clamped_index,
+                        self.inext_scale,
+                        self.mass_scale,
+                        self.zero_mask_num,
+                        self.b_undeformed_vert,
+                        self.bkgrad,
+                        self.n_branch
+                    )
+                    self.bkgrad.grad_DX_X = grad_per_ICitr.grad_DX_X
+                    self.bkgrad.grad_DX_M = grad_per_ICitr.grad_DX_M
 
                 ratio, absolute_error, relative_error = self.numerical_gradient_checking(constraint_loop,
                                                                                          self.bkgrad,
@@ -1613,20 +1614,20 @@ class DEFT_sim(nn.Module):
                 DLO_mass[self.selected_children_index],
                 bkgrad
             )
-            # #
-            # positions, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
-            #     batch,
-            #     positions,
-            #     nominal_length,
-            #     DLO_mass,
-            #     clamped_index,
-            #     scale,
-            #     perturbed_mass_scale,
-            #     zero_mask_num,
-            #     undeformed_vertices,
-            #     bkgrad,
-            #     n_branch
-            # )
+            #
+            positions, grad_per_ICitr = self.constraints_enforcement.Inextensibility_Constraint_Enforcement(
+                batch,
+                positions,
+                nominal_length,
+                DLO_mass,
+                clamped_index,
+                scale,
+                perturbed_mass_scale,
+                zero_mask_num,
+                undeformed_vertices,
+                bkgrad,
+                n_branch
+            )
 
         return positions
 
