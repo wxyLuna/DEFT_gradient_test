@@ -747,7 +747,7 @@ class constraints_enforcement(nn.Module):
             DRpc = pytorch3d.transforms.axis_angle_to_matrix(Drpc)
             DRcc = pytorch3d.transforms.axis_angle_to_matrix(Drcc)
 
-            calculate_DX = True
+            calculate_DX = False
             if calculate_DX:
                 # function result for DX
                 DXpc_output = parent_vertices[:, i + 1:i + 2, :].reshape(batch, 3)-pv_1
@@ -799,26 +799,24 @@ class constraints_enforcement(nn.Module):
 
             #for DX_pc+1_x, DX_cc+1_x old gradient
             for b in range(batch):
-                p_start = 3 * (i+1)
-                p_end = p_start + 3
-                c_start = 3 * (child_idx * grad_per_RCEPC.num_vertices + 1)
-                c_end = c_start + 3
+                p_start = 3 * i
+                p_end = p_start + 6
+                c_start = 3 * child_idx * grad_per_RCEPC.num_vertices
+                c_end = c_start + 6
 
                 grad_X_pc_interest_list.append(grad_per_RCEPC.grad_DX_X[b, p_start:p_end, :].copy())
                 grad_X_cc_interest_list.append(grad_per_RCEPC.grad_DX_X[b, c_start:c_end, :].copy())
 
-            # Stack into tensor shape (B, 3, N)
+            # Stack into tensor shape (B, 6, N)
             grad_X_pc_interest = np.stack(grad_X_pc_interest_list, axis=0)
             grad_X_cc_interest = np.stack(grad_X_cc_interest_list, axis=0)
 
             grad_DX_X_interest = np.concatenate((grad_X_pc_interest, grad_X_cc_interest), axis=1)
-
-
+            grad_DX_X_old = np.concatenate((grad_X_pc_interest[:, 3:, :], grad_X_cc_interest[:, 3:, :]), axis=1)
             grad_chain_passed_DX_X = grad_DX_X_step @ grad_DX_X_interest
-
             grad_DX_X_step_expanded = np.concatenate((grad_DX_X_step_pc,grad_DX_X_step_cc), axis=1)
 
-            grad_step_DX_X = grad_DX_X_step_expanded + grad_DX_X_interest + grad_chain_passed_DX_X
+            grad_step_DX_X = grad_DX_X_step_expanded + grad_DX_X_old + grad_chain_passed_DX_X
 
             for b in range(batch):
                 p_start = 3 * (i+1)

@@ -680,8 +680,8 @@ class RCEPC_gradient:
 
 
         grad_DX_X = np.concatenate(
-            (np.concatenate((J_00, J_02), axis=2),
-             np.concatenate((J_10, J_12), axis=2)),
+            (np.concatenate((J_01, J_00, J_03, J_02), axis=2),
+             np.concatenate((J_11, J_10, J_13, J_12), axis=2)),
             axis = 1
             )
 

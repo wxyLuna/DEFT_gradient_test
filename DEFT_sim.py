@@ -1096,6 +1096,9 @@ class DEFT_sim(nn.Module):
             previous_parent_vertices_iteration_edge2_copy = previous_parent_vertices_iteration_edge2.clone()
             previous_children_vertices_iteration_edge_copy = previous_children_vertices_iteration_edge.clone()
 
+            parent_rod_orientation_copy = parent_rod_orientation.clone()
+            children_rod_orientation_copy = children_rod_orientation.clone()
+
             b_DLOs_vertices_input = b_DLOs_vertices.clone() # for numerical gradient checking
             # Reset gradient storage for inextensibility enforcement
             self.bkgrad.reset(self.batch, self.n_branch, self.n_vert)
@@ -1183,8 +1186,6 @@ class DEFT_sim(nn.Module):
                 parent_rod_orientation = torch.from_numpy(parent_rod_orientation)
                 children_rod_orientation = torch.from_numpy(children_rod_orientation)
             else:
-                parent_rod_orientation_copy = parent_rod_orientation.clone()
-                children_rod_orientation_copy = children_rod_orientation.clone()
                 for _ in range(constraint_loop):
                     parent_vertices = b_DLOs_vertices[self.selected_parent_index]
                     children_vertices = b_DLOs_vertices[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
@@ -1393,7 +1394,7 @@ class DEFT_sim(nn.Module):
         #--------------calculate numerical ICE gradient-----------------
         b_DLOs_vertices_pos_input = b_DLOs_vertices_input.clone() + d_positions_input
         b_DLOs_vertices_neg_input = b_DLOs_vertices_input.clone() - d_positions_input
-        print('numerical positive')
+        # print('numerical positive')
         b_DLOs_vertices_pos = self.constraint_loop_iteration(self.batch,
                                                             b_DLOs_vertices_pos_input,
                                                             self.batched_m_restEdgeL,
@@ -1417,7 +1418,7 @@ class DEFT_sim(nn.Module):
                                                             init_children_vertices.clone()
                                                             )
 
-        print('numerical negative')
+        # print('numerical negative')
         b_DLOs_vertices_neg = self.constraint_loop_iteration(self.batch,
                                                             b_DLOs_vertices_neg_input,
                                                             self.batched_m_restEdgeL,
@@ -1555,7 +1556,7 @@ class DEFT_sim(nn.Module):
         # previous_parent_vertices_iteration_edge2 = positions[self.selected_parent_index].clone()
         # previous_children_vertices_iteration_edge = positions[self.selected_children_index].view(self.batch, -1,self.n_vert, 3).clone()
         for _ in range(constraint_loop):
-            print('in numerical')
+            # print('in numerical')
             parent_vertices = positions[self.selected_parent_index]
             children_vertices = positions[self.selected_children_index].view(self.batch, -1, self.n_vert, 3)
             parent_vertices, parent_rod_orientation, children_vertices, children_rod_orientation, _ = \
